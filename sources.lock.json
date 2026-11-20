@@ -40,7 +40,7 @@
       "id": "vendor-adapter",
       "repository": "its-hecker/ColorOS17-Coral-Vendor",
       "branch": "dev/coloros17-firstboot",
-      "commit": "a1dde22f2e50401a7fd588b912581946a974ea96",
+      "commit": "c36d0b0bfae0f8a68537bfaa4fe7b71b0f1c949c",
       "path": "adapters/vendor",
       "optional": false
     },
