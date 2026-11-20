@@ -32,7 +32,7 @@
       "id": "device-adapter",
       "repository": "its-hecker/ColorOS17-Coral-DeviceTree",
       "branch": "dev/coloros17-firstboot",
-      "commit": "8484e3b6c6a7bf5d0ac8eddb1330552644efdd42",
+      "commit": "c34d2a32d090b3d74c24010d122ee66cec0ac44d",
       "path": "adapters/device",
       "optional": false
     },
@@ -48,7 +48,7 @@
       "id": "kernel-adapter",
       "repository": "its-hecker/ColorOS17-Floral-Kernel",
       "branch": "dev/coloros17-firstboot",
-      "commit": "ab9fc7104f71d5ec1fdcabfec389ddc113d2a176",
+      "commit": "de49cb85dcb80b6b444aceb27341b58948744bb2",
       "path": "adapters/kernel",
       "optional": false
     },

@@ -1,13 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Optional pinned source overlay, NOT a flashable ColorOS build. -->
+<!-- Optional pinned source overlay. Not a bootable ColorOS17 build. -->
 <manifest>
   <remote name="hecker" fetch="https://github.com/its-hecker/" />
   <project name="heckeros-floral-devicetree" path="device/google/coral" remote="hecker" revision="df8a1e64fc854158ddc4ed773a14f95e6455d310" />
   <project name="heckeros-coral-vendor" path="vendor/google/coral" remote="hecker" revision="e5dbd92c40314ec1c17eab7887c7c13a5e87fa0c" />
   <project name="heckeros-floral-kernel" path="kernel/google/msm-4.14" remote="hecker" revision="73ede50b7eb81b081a314be06f4fe89fc742946f" />
-  <project name="ColorOS17-Coral-DeviceTree" path="vendor/hecker/coloros17/device" remote="hecker" revision="8484e3b6c6a7bf5d0ac8eddb1330552644efdd42" />
+  <project name="ColorOS17-Coral-DeviceTree" path="vendor/hecker/coloros17/device" remote="hecker" revision="c34d2a32d090b3d74c24010d122ee66cec0ac44d" />
   <project name="ColorOS17-Coral-Vendor" path="vendor/hecker/coloros17/vendor" remote="hecker" revision="ba70b4f1a263297252861cc331c375bc25467076" />
-  <project name="ColorOS17-Floral-Kernel" path="vendor/hecker/coloros17/kernel" remote="hecker" revision="ab9fc7104f71d5ec1fdcabfec389ddc113d2a176" />
+  <project name="ColorOS17-Floral-Kernel" path="vendor/hecker/coloros17/kernel" remote="hecker" revision="de49cb85dcb80b6b444aceb27341b58948744bb2" />
   <project name="floral-gcam-plugin" path="vendor/hecker/floral/gcam" remote="hecker" revision="139e4608220d915227e69a5c6ee9fc0984b24125" />
   <project name="floral-3D-faceid-plugin" path="vendor/hecker/floral/faceid" remote="hecker" revision="d998995e1452d2c3d9882bfdf659e1db760a99be" />
   <project name="floral-motionsense-plugin" path="vendor/hecker/floral/motionsense" remote="hecker" revision="92d0051faf53acac3dfefec6597a12d587eefa73" />
