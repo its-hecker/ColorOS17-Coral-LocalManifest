@@ -32,7 +32,7 @@
       "id": "device-adapter",
       "repository": "its-hecker/ColorOS17-Coral-DeviceTree",
       "branch": "dev/coloros17-firstboot",
-      "commit": "baf9ee40d33b99b812268b71bd75a8b908e9de70",
+      "commit": "8484e3b6c6a7bf5d0ac8eddb1330552644efdd42",
       "path": "adapters/device",
       "optional": false
     },
@@ -40,7 +40,7 @@
       "id": "vendor-adapter",
       "repository": "its-hecker/ColorOS17-Coral-Vendor",
       "branch": "dev/coloros17-firstboot",
-      "commit": "c36d0b0bfae0f8a68537bfaa4fe7b71b0f1c949c",
+      "commit": "ba70b4f1a263297252861cc331c375bc25467076",
       "path": "adapters/vendor",
       "optional": false
     },
