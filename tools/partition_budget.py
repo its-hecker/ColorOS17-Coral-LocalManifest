@@ -58,14 +58,20 @@ def main():
     p.add_argument("--vendor-img", type=Path)
     p.add_argument("--product-img", type=Path)
     p.add_argument("--system-ext-img", type=Path)
+    p.add_argument("--embed-product", action="store_true", help="ColorOS product is inside system.img")
+    p.add_argument("--embed-system-ext", action="store_true", help="ColorOS system_ext is inside system.img")
     p.add_argument("--reserve-mib", type=int, default=32)
     p.add_argument("--output", type=Path, default=ROOT / "work/partition-budget.json")
     args = p.parse_args()
     size_map = {"system": image_bytes(args.system_img) if args.system_img else
                 LOCK["donor"]["inspected"]["system_img_bytes"]}
     for name in ("vendor", "product", "system_ext"):
-        path = getattr(args, name.replace("_", "_") + "_img", None)
-        size_map[name] = image_bytes(path) if path else None
+        path = getattr(args, name + "_img", None)
+        embedded = (name == "product" and args.embed_product or
+                    name == "system_ext" and args.embed_system_ext)
+        if embedded and path:
+            raise ValueError("An embedded partition cannot also have a separate image: " + name)
+        size_map[name] = 0 if embedded else image_bytes(path) if path else None
     report = assess(group_size(args.board_config), size_map,
                     args.reserve_mib * 1024 * 1024)
     args.output.parent.mkdir(parents=True, exist_ok=True)
