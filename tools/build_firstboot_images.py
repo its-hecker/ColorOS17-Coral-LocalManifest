@@ -241,6 +241,27 @@ def image_size_budget(aosp, sysimg, vendor):
     return result
 
 
+def validate_root_vbmeta_chain(avb, root_info, key, out):
+    """Check the root vbmeta trusts the key used for the system chain."""
+    public = out / "vbmeta_system.avbpubkey"
+    run(*avb, "extract_public_key", "--key", key, "--output", public)
+    expected = hashlib.sha1(public.read_bytes()).hexdigest().lower()
+    chunks = root_info.split("Chain Partition descriptor:")
+    matching = [c for c in chunks[1:]
+                if re.search(r"^\s*Partition Name:\s*vbmeta_system\s*$",
+                             c, re.M)]
+    if len(matching) != 1:
+        raise ValueError("Root vbmeta lacks a unique vbmeta_system chain")
+    chunk = matching[0].split("Chain Partition descriptor:", 1)[0]
+    actual = re.search(r"^\s*Public key \(sha1\):\s*([0-9a-f]+)", chunk, re.M | re.I)
+    if not actual or actual.group(1).lower() != expected:
+        raise ValueError("Root vbmeta trusts a DIFFERENT vbmeta_system signing key")
+    loc = re.search(r"^\s*Rollback Index Location:\s*(\d+)", chunk, re.M)
+    if not loc or int(loc.group(1)) != 1:
+        raise ValueError("Unexpected root chain rollback location")
+    return expected
+
+
 def sign_system(aosp, system, vbmeta, out):
     avb = avb_args(aosp)
     key = aosp / "external/avb/test/data/testkey_rsa2048.pem"
@@ -250,6 +271,8 @@ def sign_system(aosp, system, vbmeta, out):
     root_info = avb_info(avb, original_root)
     if parse_avb_value(root_info, "Flags") != 0:
         raise ValueError("Refusing build with AVB verification disabled")
+    root_chain_public_sha1 = validate_root_vbmeta_chain(
+        avb, root_info, key, out)
     base_system_meta = aosp / "out/target/product/coral/vbmeta_system.img"
     base_info = avb_info(avb, base_system_meta)
     rollback = parse_avb_value(base_info, "Rollback Index")
@@ -278,7 +301,8 @@ def sign_system(aosp, system, vbmeta, out):
         raise ValueError("ColorOS system hash-tree descriptor not found")
     return {"rollback_index": rollback, "rollback_location": location,
             "vbmeta_system": str(vbmeta),
-            "verified_root_flags": parse_avb_value(root_info, "Flags")}
+            "verified_root_flags": parse_avb_value(root_info, "Flags"),
+            "root_trusted_vbmeta_system_key_sha1": root_chain_public_sha1}
 
 
 def load_base_misc(rom_root):
