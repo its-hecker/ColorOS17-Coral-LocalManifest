@@ -89,8 +89,16 @@
     "name": "Axis GSI ColorOS 17 PLK110 2026-09-18",
     "filename": "ColorOS-17-PLK110-1789230075256-18092026-AxisGSI.zip",
     "url": "https://sourceforge.net/projects/axisgsiupdates/files/coloros/ColorOS-17-PLK110-1789230075256-18092026-AxisGSI.zip/download",
-    "sha256": null,
-    "expected_android_major": 17
+    "sha256": "2842e697e30a04513050eefbf295e1f7911733ef9d7e964a028ec91e75efef64",
+    "expected_android_major": 17,
+    "inspected": {
+      "archive_bytes": 3369547979,
+      "zip_members": 1,
+      "system_img_bytes": 6584750080,
+      "system_img_filesystem": "ext4",
+      "checked_by": "GitHub Actions run 44826418869",
+      "note": "ZIP header + inner ext4 superblock only; internal directory tree not yet inspected"
+    }
   },
   "warnings": [
     "No bootable port exists in this repository",
