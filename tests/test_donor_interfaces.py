@@ -34,6 +34,23 @@ class MatrixTests(unittest.TestCase):
             "/system_ext/etc/vintf/compatibility_matrix.xml"
         ])
 
+    def test_target_level_7_not_all_matrices(self):
+        manifest = '<manifest type="device" target-level="7"/>'
+        matrices = {
+            "/system/etc/vintf/compatibility_matrix.7.xml":
+                m.parse_hals('<compatibility-matrix><hal format="hidl"><name>android.hardware.audio</name><version>7.0</version></hal></compatibility-matrix>'),
+            "/system/etc/vintf/compatibility_matrix.8.xml":
+                m.parse_hals('<compatibility-matrix><hal format="aidl"><name>android.hardware.audio.core</name><version>1</version></hal></compatibility-matrix>')
+        }
+        level, path, details = m.audit_target_level(manifest, matrices)
+        self.assertEqual(level, "7")
+        self.assertEqual(path, "/system/etc/vintf/compatibility_matrix.7.xml")
+        self.assertEqual(details[path]["total_hal_names"], 1)
+
+    def test_missing_device_target_level_blocks(self):
+        with self.assertRaises(ValueError):
+            m.audit_target_level('<manifest type="device"/>', {})
+
     def test_no_raw_properties_leaked(self):
         raw = """ro.build.version.sdk=37
 persist.security.key=secret
