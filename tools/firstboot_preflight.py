@@ -75,7 +75,7 @@ def main():
     sys.path.insert(0, str(ROOT / "tools"))
     from partition_budget import assess, group_size
     budget = assess(group_size(board), {
-        "system": size, "vendor": None, "product": None, "system_ext": None
+        "system": size, "vendor": None, "product": 0, "system_ext": 0
     })
     report = {
         "target": "coral",
