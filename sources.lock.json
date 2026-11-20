@@ -118,15 +118,15 @@
         "my_reserve",
         "odm"
       ],
-      "system_nested_links": [
-        "system/product",
-        "system/system_ext"
-      ],
       "block_count": 1607605,
       "free_blocks": 39791,
       "block_size": 4096,
       "estimated_minimum_blocks": 1607605,
-      "note": "Top-level directories contain ColorOS payload; link types and boot-time mount behavior still need validation"
+      "note": "Top-level directories contain ColorOS payload; link types and boot-time mount behavior still need validation",
+      "system_nested_entries": [
+        "system/product",
+        "system/system_ext"
+      ]
     }
   },
   "warnings": [
