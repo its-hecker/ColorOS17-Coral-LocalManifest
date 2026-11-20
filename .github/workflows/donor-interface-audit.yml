@@ -1,0 +1,44 @@
+name: ColorOS17 donor framework and Pixel HAL audit
+
+on:
+  push:
+    branches: [dev/coloros17-firstboot]
+    paths:
+      - .github/workflows/donor-interface-audit.yml
+      - tools/audit_donor_interfaces.py
+      - sources.lock.json
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit-static-services:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - name: Checkout pinned coral device manifest
+        run: python3 tools/bootstrap.py
+      - name: Download verified donor
+        run: python3 tools/donor.py --download
+      - name: Extract donor for metadata inspection (no mounts)
+        run: python3 tools/inspect_ext4_contents.py --keep-image
+      - name: Inspect framework VINTF and embedded mount links
+        run: |
+          python3 tools/audit_donor_interfaces.py \
+            --image work/donor/system-for-inspection.img \
+            --device-manifest work/hardware/device/manifest.xml
+      - name: Delete donor system image without publishing binary
+        if: always()
+        run: rm -f work/donor/system-for-inspection.img
+      - name: Upload metadata reports only
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coloros17-donor-framework-audit
+          path: |
+            work/donor-interfaces.json
+            work/donor-ext4-layout.json
+          if-no-files-found: ignore
+          retention-days: 14
