@@ -1,0 +1,49 @@
+name: ColorOS 17 donor and coral source integration audit
+
+on:
+  push:
+    branches: [dev/coloros17-firstboot]
+    paths:
+      - .github/workflows/integration-audit.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  hardware-inputs:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@v4
+      - name: System prerequisites
+        run: |
+          python3 --version
+          git --version
+          df -h .
+      - name: Clone exact coral, vendor, kernel and plugin revisions
+        run: python3 tools/bootstrap.py --audit
+      - name: Publish only machine-readable audit (no binaries)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coral-source-audit
+          path: work/bootstrap-report.json
+          if-no-files-found: ignore
+          retention-days: 7
+
+  donor-header-inspection:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download and inspect PLK110 donor without unpacking or flashing
+        run: python3 tools/donor.py --download --inspect
+      - name: Publish only hash and image metadata (no proprietary firmware)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coloros17-donor-inspection
+          path: work/donor-inspection.json
+          if-no-files-found: ignore
+          retention-days: 7
