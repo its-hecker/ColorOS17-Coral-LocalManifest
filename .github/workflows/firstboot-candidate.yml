@@ -7,6 +7,7 @@ on:
       - .github/workflows/firstboot-candidate.yml
       - tools/firstboot_preflight.py
       - tools/partition_budget.py
+      - tools/avb_partition_audit.py
       - sources.lock.json
   workflow_dispatch:
 
@@ -23,6 +24,11 @@ jobs:
         run: python3 tools/bootstrap.py --audit
       - name: Generate GSI embedded-dir fstab and hard-block unknown partition sizes
         run: python3 tools/firstboot_preflight.py
+      - name: Audit existing vbmeta_system, dynamic and OTA partition declarations
+        run: |
+          python3 tools/avb_partition_audit.py \
+            --board work/hardware/device/BoardConfig-common.mk \
+            --fstab-candidate work/firstboot/fstab.hardware.coloros17.candidate
       - name: Publish candidate and plain-text reports ONLY
         if: always()
         uses: actions/upload-artifact@v4
@@ -32,5 +38,6 @@ jobs:
             work/firstboot/fstab.hardware.coloros17.candidate
             work/firstboot/fstab-diff.txt
             work/firstboot/firstboot-report.json
+            work/firstboot/avb-audit.json
           if-no-files-found: ignore
           retention-days: 14
