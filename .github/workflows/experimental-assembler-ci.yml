@@ -1,0 +1,26 @@
+name: ColorOS17 real-image assembler static and synthetic tests
+
+on:
+  push:
+    branches: [dev/coloros17-firstboot]
+    paths:
+      - tools/build_firstboot_images.py
+      - tools/prepare_device.py
+      - tests/test_firstboot_assembly.py
+      - .github/workflows/experimental-assembler-ci.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test-engineering-assembler:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check shell/Python syntax
+        run: |
+          bash -n build.sh
+          python3 -m py_compile tools/build_firstboot_images.py tools/prepare_device.py
+      - name: Run offline safety tests
+        run: python3 -m unittest discover -s tests -v
