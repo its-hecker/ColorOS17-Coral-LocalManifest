@@ -5,6 +5,9 @@ on:
     branches: [dev/coloros17-firstboot]
     paths:
       - .github/workflows/firstboot-candidate.yml
+      - tools/firstboot_preflight.py
+      - tools/partition_budget.py
+      - sources.lock.json
   workflow_dispatch:
 
 permissions:
