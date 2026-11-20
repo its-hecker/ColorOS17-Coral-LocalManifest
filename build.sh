@@ -29,10 +29,15 @@ else
     exit 2
 fi
 repo sync -c --fail-fast --no-clone-bundle --no-tags -j4
-echo "Building pinned coral Android 17 hardware baseline."
-env -u HECKER_BUILD_JOBS USE_RBE=true HECKER_DEVICE=coral \
+echo "Pinning experimental coral first-stage mount layout in isolated tree."
+python3 "$PORT_ROOT/tools/bootstrap.py" --audit
+python3 "$PORT_ROOT/tools/prepare_device.py" --rom-root "$AOSP_ROOT"
+echo "Building coral Android 17 kernel/vendor with AVB verification enabled."
+env -u HECKER_BUILD_JOBS USE_RBE=true WITH_AVB=true HECKER_DEVICE=coral \
     HECKER_BUILD_VARIANT=userdebug bash .repo/local_manifests/build.sh
-echo "Checking ColorOS donor and generated coral vendor/boot images."
+echo "Checking actual ColorOS system and coral vendor/boot geometry."
 python3 "$PORT_ROOT/tools/stage_build.py" --rom-root "$AOSP_ROOT"
-echo "Reports in $PORT_ROOT/work/stage"
-echo "These outputs are NOT a flashable ColorOS ROM."
+echo "Assembling an EXPERIMENTAL signed ColorOS17 coral A/B super image."
+python3 "$PORT_ROOT/tools/build_firstboot_images.py" --rom-root "$AOSP_ROOT"
+echo "Engineering image package: $PORT_ROOT/work/engineering/"
+echo "NOT TESTED ON DEVICE. This is NOT a recovery-installable OTA."
