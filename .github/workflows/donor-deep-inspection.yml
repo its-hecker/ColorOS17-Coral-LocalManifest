@@ -1,0 +1,35 @@
+name: PLK110 ColorOS 17 ext4 interior inspection
+
+on:
+  push:
+    branches: [dev/coloros17-firstboot]
+    paths:
+      - .github/workflows/donor-deep-inspection.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  inspect-system-ext4:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check free space and ext4 tooling
+        run: |
+          df -h .
+          command -v debugfs
+          command -v resize2fs
+      - name: Download pinned donor with SHA-256 validation
+        run: python3 tools/donor.py --download
+      - name: Inspect ext4 root, nested partition dirs and minimum size
+        run: python3 tools/inspect_ext4_contents.py
+      - name: Publish nonbinary metadata report only
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coloros17-ext4-interior-layout
+          path: work/donor-ext4-layout.json
+          if-no-files-found: ignore
+          retention-days: 14
