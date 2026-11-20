@@ -1,0 +1,100 @@
+{
+  "format": 1,
+  "project": "ColorOS 17 for Google Pixel 4 XL (coral)",
+  "status": "stage-0-input-audit-only",
+  "maintainer": "Hecker",
+  "sources": [
+    {
+      "id": "device-base",
+      "repository": "its-hecker/heckeros-floral-devicetree",
+      "branch": "cnb_latest_stable",
+      "commit": "df8a1e64fc854158ddc4ed773a14f95e6455d310",
+      "path": "hardware/device",
+      "optional": false
+    },
+    {
+      "id": "vendor-base",
+      "repository": "its-hecker/heckeros-coral-vendor",
+      "branch": "cnb_latest_stable",
+      "commit": "e5dbd92c40314ec1c17eab7887c7c13a5e87fa0c",
+      "path": "hardware/vendor",
+      "optional": false
+    },
+    {
+      "id": "kernel-base",
+      "repository": "its-hecker/heckeros-floral-kernel",
+      "branch": "cnb_latest_stable",
+      "commit": "73ede50b7eb81b081a314be06f4fe89fc742946f",
+      "path": "hardware/kernel",
+      "optional": false
+    },
+    {
+      "id": "device-adapter",
+      "repository": "its-hecker/ColorOS17-Coral-DeviceTree",
+      "branch": "dev/coloros17-firstboot",
+      "commit": "baf9ee40d33b99b812268b71bd75a8b908e9de70",
+      "path": "adapters/device",
+      "optional": false
+    },
+    {
+      "id": "vendor-adapter",
+      "repository": "its-hecker/ColorOS17-Coral-Vendor",
+      "branch": "dev/coloros17-firstboot",
+      "commit": "a1dde22f2e50401a7fd588b912581946a974ea96",
+      "path": "adapters/vendor",
+      "optional": false
+    },
+    {
+      "id": "kernel-adapter",
+      "repository": "its-hecker/ColorOS17-Floral-Kernel",
+      "branch": "dev/coloros17-firstboot",
+      "commit": "ab9fc7104f71d5ec1fdcabfec389ddc113d2a176",
+      "path": "adapters/kernel",
+      "optional": false
+    },
+    {
+      "id": "gcam",
+      "repository": "its-hecker/floral-gcam-plugin",
+      "branch": "main",
+      "commit": "139e4608220d915227e69a5c6ee9fc0984b24125",
+      "path": "plugins/gcam",
+      "optional": false
+    },
+    {
+      "id": "faceid",
+      "repository": "its-hecker/floral-3D-faceid-plugin",
+      "branch": "main",
+      "commit": "d998995e1452d2c3d9882bfdf659e1db760a99be",
+      "path": "plugins/faceid",
+      "optional": false
+    },
+    {
+      "id": "motionsense",
+      "repository": "its-hecker/floral-motionsense-plugin",
+      "branch": "main",
+      "commit": "92d0051faf53acac3dfefec6597a12d587eefa73",
+      "path": "plugins/motionsense",
+      "optional": false
+    },
+    {
+      "id": "community-reference",
+      "repository": "nathanatgit/oneplus7-coloros17-port",
+      "branch": "main",
+      "commit": "7163941138814b46b7b08ca727c4b9d290f736c5",
+      "path": "references/oneplus7",
+      "optional": true
+    }
+  ],
+  "donor": {
+    "name": "Axis GSI ColorOS 17 PLK110 2026-09-18",
+    "filename": "ColorOS-17-PLK110-1789230075256-18092026-AxisGSI.zip",
+    "url": "https://sourceforge.net/projects/axisgsiupdates/files/coloros/ColorOS-17-PLK110-1789230075256-18092026-AxisGSI.zip/download",
+    "sha256": null,
+    "expected_android_major": 17
+  },
+  "warnings": [
+    "No bootable port exists in this repository",
+    "Donor image must be inspected before patching or flashing",
+    "GCam, Face ID, Motion Sense plugin .mk files cannot be inserted directly into a precompiled ColorOS GSI"
+  ]
+}
