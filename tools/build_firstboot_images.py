@@ -210,6 +210,24 @@ def transplant_pixel(base_images, system, outdir, simg2img, prefix, reserve_byte
     return {"new_files": added, "grown_by_bytes": grow, "copied_bytes": total}
 
 
+def reconcile_pixel_property_contexts(system, vendor_raw, outdir, prefix):
+    """Apply only collision-safe property_contexts edits to a staging image."""
+    import importlib.util
+    script = ROOT / "tools/apply_property_contexts.py"
+    spec = importlib.util.spec_from_file_location("propctx_apply", script)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    with contextlib.ExitStack() as stack:
+        donor = stack.enter_context(mounted(
+            system, outdir / "mnt-prop-system", False, prefix))
+        vendor = stack.enter_context(mounted(
+            vendor_raw, outdir / "mnt-prop-vendor", True, prefix))
+        result = module.apply(donor, vendor, outdir, prefix)
+        run(*prefix, "sync")
+    run("e2fsck", "-fn", system)
+    return result
+
+
 def image_size_budget(aosp, sysimg, vendor):
     sys.path.insert(0, str(ROOT / "tools"))
     from partition_budget import assess, group_size, image_bytes
@@ -353,7 +371,9 @@ def main():
     disk_image(built / "vendor.img", raw_vendor, simg)
     budget = image_size_budget(aosp, system, raw_vendor)
     reserve = budget["remaining_after_reservation_bytes"]
-    transplant = transplant_pixel(built, system, out, simg, sudo_prefix(), reserve)
+    prefix = sudo_prefix()
+    transplant = transplant_pixel(built, system, out, simg, prefix, reserve)
+    propctx = reconcile_pixel_property_contexts(system, raw_vendor, out, prefix)
     vbmeta_sys = out / "vbmeta_system.img"
     avb = sign_system(aosp, system, vbmeta_sys, out)
     budget = image_size_budget(aosp, system, raw_vendor)
@@ -370,7 +390,7 @@ def main():
     manifest = {"status": "ENGINEERING_IMAGES_BUILT_UNTESTED",
                 "target": "coral", "donor": "ColorOS17 PLK110",
                 "kernel": "pinned floral Android17 base",
-                "pixel_transplant": transplant, "avb": avb,
+                "pixel_transplant": transplant, "property_contexts": propctx, "avb": avb,
                 "partition_budget": budget, "super": sup_report,
                 "boot_verified": False, "runtime_hal_verified": False,
                 "faceid_and_soli_verified": False, "OTA_installable": False,
