@@ -19,6 +19,13 @@ class BudgetTests(unittest.TestCase):
         self.assertEqual(r["status"], "BLOCKED_UNMEASURED")
         self.assertEqual(r["remaining_after_reservation_bytes"], 1430564864)
 
+    def test_gsi_embedded_product_system_ext_only_vendor_unknown(self):
+        sizes = {"system": 6584750080, "vendor": None,
+                 "product": 0, "system_ext": 0}
+        r = mod.assess(8048869376, sizes)
+        self.assertEqual(r["missing_partition_images"], ["vendor"])
+        self.assertEqual(r["status"], "BLOCKED_UNMEASURED")
+
     def test_oversize_fails(self):
         sizes = {"system": 6584750080, "vendor": 1400000000,
                  "product": 300000000, "system_ext": 100000000}
