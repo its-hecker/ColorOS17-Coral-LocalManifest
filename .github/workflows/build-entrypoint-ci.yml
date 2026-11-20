@@ -1,0 +1,37 @@
+name: ColorOS17 staging build entrypoint validation
+
+on:
+  push:
+    branches: [dev/coloros17-firstboot]
+    paths:
+      - build.sh
+      - tools/stage_build.py
+      - .github/workflows/build-entrypoint-ci.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-script-tests:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate shell and Python syntax
+        run: |
+          bash -n build.sh
+          python3 -m py_compile tools/stage_build.py
+          python3 -m unittest discover -s tests -v
+      - name: Run real-device BoardConfig candidate generator
+        run: |
+          python3 tools/bootstrap.py --audit
+          python3 work/adapters/device/tools/patch_boardconfig.py \
+            --original work/hardware/device/BoardConfig-common.mk \
+            --output work/boardconfig-stage-candidate.mk
+      - name: Publish candidate diff only
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coral-boardconfig-stage-candidate
+          path: work/boardconfig-stage-candidate.mk
+          if-no-files-found: ignore
