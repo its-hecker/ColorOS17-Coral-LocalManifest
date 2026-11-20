@@ -1,10 +1,10 @@
 # ColorOS 17 for Pixel 4 XL (coral)
 
-**Maintainer:** Hecker · **Target:** Pixel 4 XL (`coral`) · **Status:** Stage 1, verified donor layout + guarded first-boot candidate (NOT flashable).
+**Maintainer:** Hecker · **Target:** Pixel 4 XL (`coral`) · **Status:** Stage 2, one-command experimental image-assembly pipeline (boot unverified).
 
 A **real ColorOS 17 binary port**, not an AOSP visual theme. The target design combines a third-party PLK110 ColorOS 17 donor GSI with the Pixel's known Android 17 floral kernel, device tree and vendor, then adapts Google Camera, Citadel-backed 3D Face Unlock and Soli Motion Sense.
 
-This is **not bootable or flashable yet**. We have inspected the donor ext4 image's embedded partition directories and generated an initial coral fstab compatibility candidate. We have **not** patched the actual donor framework, assembled a working image, or confirmed boot. GitHub contains only scripts, source references and port-specific tests; proprietary images remain on the builder's computer.
+This is **not bootable or flashable yet**. We have inspected the donor ext4 image's embedded partition directories and generated an initial coral fstab compatibility candidate. The experimental build script now stages Pixel camera/telephony/Oslo components, performs guarded property-context repairs, signs AVB metadata and generates a sparse super image. **No successful device boot or final compatibility has been verified.** GitHub contains only scripts, source references and port-specific tests; proprietary images remain on the builder's computer.
 
 ## Development
 
@@ -71,3 +71,8 @@ packages blindly or claim the resulting GSI is compatible with coral. It leaves
 staging files under `work/stage/` with explicit unresolved blockers.
 The correct ColorOS boot/SELinux/VINTF/AVB integration must be established and
 tested on a Pixel 4 XL before any ROM package can responsibly be called bootable.
+
+
+## Experimental image build
+
+See [the single-command build and safety requirements](docs/BUILD_EXPERIMENTAL.md). The command invokes `build.sh`, which checks out and compiles coral hardware in an isolated folder, assembles a ColorOS engineering image archive, and **fails instead of silently bypassing AVB/SELinux problems**. No recovery-flashable OTA or working first boot is claimed.

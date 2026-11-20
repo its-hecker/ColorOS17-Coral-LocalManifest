@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build coral hardware in a separate Android tree and stage ColorOS17 GSI.
+# Build an experimental ColorOS17 coral image set with signed AVB and A/B super.
 # This is a development-only pipeline. It does not flash or emit a bootable OTA.
 set -eo pipefail
 PORT_ROOT="$(cd -- "$(dirname -- "$0")" && pwd)"
@@ -10,7 +10,7 @@ LOCAL="https://github.com/its-hecker/HeckerOs-localmanifest.git"
 BRANCH="cnb_latest_stable"
 echo "== ColorOS 17 / Pixel 4 XL experimental staging =="
 echo "Android tree: $AOSP_ROOT"
-echo "Only staged images and reports will be generated. NOT FLASHABLE."
+echo "This produces an UNTESTED engineering image archive, not an OTA installer."
 command -v git >/dev/null
 command -v git-lfs >/dev/null
 command -v repo >/dev/null

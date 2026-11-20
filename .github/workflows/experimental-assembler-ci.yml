@@ -6,6 +6,9 @@ on:
     paths:
       - tools/build_firstboot_images.py
       - tools/prepare_device.py
+      - tools/apply_property_contexts.py
+      - tests/test_property_application.py
+      - build.sh
       - tests/test_firstboot_assembly.py
       - .github/workflows/experimental-assembler-ci.yml
   workflow_dispatch:
