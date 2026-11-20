@@ -44,3 +44,30 @@ See [docs/PORTING_PLAN.md](docs/PORTING_PLAN.md) for milestone boundaries and fa
 - Physical fit, first-boot AVB descriptors, linker/SELinux/VINTF compatibility and donor's embedded ADB key require further validation. The filesystem is near full and its estimated minimum size equals the current image size.
 
 See [verified donor layout](docs/DONOR_LAYOUT.md) and [first-boot candidate tool](tools/firstboot_preflight.py). The current candidate workflow publishes **only a generated fstab and text reports**, never a flashable image.
+
+
+## One-command experimental staging build (ServerHive / Ubuntu)
+
+From a Linux build server that has the Android repo tool, Git LFS and Android
+build prerequisites, run:
+
+```bash
+git clone -b dev/coloros17-firstboot \
+  https://github.com/its-hecker/ColorOS17-Coral-LocalManifest.git ~/coloros17-coral-port
+cd ~/coloros17-coral-port
+bash build.sh
+```
+
+The entrypoint creates a **separate** Android tree under
+`~/coloros17-coral/aosp`, syncs the maintained HeckerOS Android 17
+coral baseline, builds the original ROM's hardware images, downloads the pinned
+PLK110 ColorOS 17 GSI and stages fstab/BoardConfig candidates. Source/hardware
+compatibility and real vendor image size are validated. Unmodified HeckerOS
+workspaces are left alone.
+
+**This is not yet a real ColorOS ROM image build.** The pipeline deliberately
+does not flash, install, release, sign an unverified vbmeta, merge proprietary
+packages blindly or claim the resulting GSI is compatible with coral. It leaves
+staging files under `work/stage/` with explicit unresolved blockers.
+The correct ColorOS boot/SELinux/VINTF/AVB integration must be established and
+tested on a Pixel 4 XL before any ROM package can responsibly be called bootable.
