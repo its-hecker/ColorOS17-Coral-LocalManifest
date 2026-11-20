@@ -1,0 +1,32 @@
+name: ColorOS17 coral vendor source footprint
+
+on:
+  push:
+    branches: [dev/coloros17-firstboot]
+    paths:
+      - .github/workflows/vendor-source-footprint.yml
+      - tools/vendor_source_footprint.py
+      - sources.lock.json
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  source-size:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@v4
+      - name: Checkout pinned Pixel hardware without fetching binary LFS objects
+        run: python3 tools/bootstrap.py
+      - name: Measure logical vendor source and available coral group space
+        run: python3 tools/vendor_source_footprint.py
+      - name: Publish report only
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coral-vendor-source-footprint
+          path: work/vendor-footprint.json
+          if-no-files-found: ignore
+          retention-days: 14
