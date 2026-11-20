@@ -28,7 +28,8 @@ PARTITIONS = ("product", "system_ext")
 PIXEL_COPY = {
     "product": (
         "app/PixelCameraServicesCoral",
-        "priv-app/FloralGoogleCamera",
+        "app/FloralGoogleCamera",
+        "app/FloralMotionSenseBridge",
         "etc/default-permissions/default-permissions-floral-gcam.xml",
         "etc/sysconfig/floral-gcam-hidden-api.xml",
     ),
@@ -39,10 +40,17 @@ PIXEL_COPY = {
         "priv-app/qcrilmsgtunnel",
         "framework/google-ril.jar",
         "framework/qcrilhook.jar",
-        "priv-app/FloralMotionSenseBridge",
         "priv-app/FloralMotionSenseSettings",
-        "app/FloralOsloFeedback",
+        "priv-app/FloralOsloFeedback",
+        "etc/permissions/privapp-permissions-floral-motionsense.xml",
     ),
+}
+PIXEL_REQUIRED = {
+    "FloralGoogleCamera",
+    "FloralMotionSenseBridge",
+    "FloralMotionSenseSettings",
+    "FloralOsloFeedback",
+    "ims",
 }
 
 
@@ -171,8 +179,10 @@ def transplant_pixel(base_images, system, outdir, simg2img, prefix, reserve_byte
                 source = mounts[partition] / rel
                 if source.exists():
                     required.append((partition, rel, source, size_of(source)))
-        if not required:
-            raise ValueError("No Pixel camera/telephony applications found in built images")
+        found = {source.name for _, _, source, _ in required}
+        missing = sorted(PIXEL_REQUIRED - found)
+        if missing:
+            raise ValueError("Missing required compiled Pixel apps: " + ", ".join(missing))
         total = sum(x[3] for x in required)
         # Preserve 64 MiB filesystem slack after copying selected apps.
         # Do not grow unnecessarily; donor originally has ~163 MiB free.
