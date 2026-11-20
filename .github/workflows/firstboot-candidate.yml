@@ -1,0 +1,33 @@
+name: ColorOS17 coral real-source first-boot mount candidate
+
+on:
+  push:
+    branches: [dev/coloros17-firstboot]
+    paths:
+      - .github/workflows/firstboot-candidate.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-candidate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@v4
+      - name: Checkout exact hardware and compatibility tool revisions
+        run: python3 tools/bootstrap.py --audit
+      - name: Generate GSI embedded-dir fstab and hard-block unknown partition sizes
+        run: python3 tools/firstboot_preflight.py
+      - name: Publish candidate and plain-text reports ONLY
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coloros17-coral-firstboot-candidate
+          path: |
+            work/firstboot/fstab.hardware.coloros17.candidate
+            work/firstboot/fstab-diff.txt
+            work/firstboot/firstboot-report.json
+          if-no-files-found: ignore
+          retention-days: 14
