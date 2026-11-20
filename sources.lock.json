@@ -1,7 +1,7 @@
 {
   "format": 1,
   "project": "ColorOS 17 for Google Pixel 4 XL (coral)",
-  "status": "stage-0-input-audit-only",
+  "status": "phase-1-preboot-audits-not-flashable",
   "maintainer": "Hecker",
   "sources": [
     {
@@ -97,7 +97,7 @@
       "system_img_bytes": 6584750080,
       "system_img_filesystem": "ext4",
       "checked_by": "GitHub Actions run 44826418869",
-      "note": "ZIP header + inner ext4 superblock only; internal directory tree not yet inspected"
+      "note": "ZIP contents and raw ext4 superblock verified; internal directories also independently inspected in run 44828896866"
     },
     "internal_layout": {
       "verified_by": "GitHub Actions run 44828896866",
@@ -133,5 +133,25 @@
     "No bootable port exists in this repository",
     "Donor image must be inspected before patching or flashing",
     "GCam, Face ID, Motion Sense plugin .mk files cannot be inserted directly into a precompiled ColorOS GSI"
-  ]
+  ],
+  "audit_evidence": {
+    "donor_zip_and_root": "44826418869",
+    "donor_ext4_interior": "44828896866",
+    "vendor_source_logical_size": {
+      "run_id": "44830676829",
+      "vendor_bytes": 749750890,
+      "product_bytes": 181063896,
+      "system_ext_bytes": 35229833,
+      "source_only_not_vendor_img": true
+    },
+    "pixel_runtime_dependencies": {
+      "run_id": "44830950770",
+      "checked": 13,
+      "present": 13,
+      "installed": false
+    },
+    "vendor_img_measured": false,
+    "avb_and_partition_descriptors_reconciled": false,
+    "coloros_device_boot_verified": false
+  }
 }
