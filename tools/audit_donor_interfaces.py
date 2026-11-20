@@ -113,6 +113,27 @@ def inspect_links(image):
     return result
 
 
+def required_names(hals):
+    return {name for name, descriptors in hals.items()
+            if any(str(hal["optional"]).lower() != "true" for hal in descriptors)}
+
+
+def audit_target_level(manifest_xml, matrices):
+    try:
+        target = ET.fromstring(manifest_xml).get("target-level")
+    except ET.ParseError as exc:
+        raise ValueError("Malformed coral device VINTF manifest") from exc
+    if not target or not target.isdigit() or int(target) > 100:
+        raise ValueError("Missing or unexpected coral VINTF target-level")
+    selected = f"/system/etc/vintf/compatibility_matrix.{target}.xml"
+    levels = {name: {"total_hal_names": len(hals),
+                     "potentially_required_hal_names": len(required_names(hals)),
+                     "oplus_hal_names": sorted(n for n in hals
+                                               if n.startswith("vendor.oplus."))}
+              for name, hals in matrices.items()}
+    return target, selected, levels
+
+
 def analyze(image, device_manifest):
     with image.open("rb") as stream:
         stream.seek(1080)
@@ -120,7 +141,8 @@ def analyze(image, device_manifest):
             raise ValueError("Expected pinned raw ext4 donor")
     if not device_manifest.is_file():
         raise ValueError("Missing pinned coral device HAL manifest")
-    coral_hals = parse_hals(device_manifest.read_text())
+    device_xml = device_manifest.read_text()
+    coral_hals = parse_hals(device_xml)
     listings = {path: directory_entry_names(image, path) for path in VINTF_DIRS}
     matrix_files = matrix_paths_from_listings(listings)
     matrix = {}
@@ -130,14 +152,17 @@ def analyze(image, device_manifest):
         matrix_presence[path] = content is not None
         if content is not None:
             matrix[path] = parse_hals(content)
-    donor_hals = {}
-    for section in matrix.values():
-        for name, desc in section.items():
-            donor_hals.setdefault(name, []).extend(desc)
-    required = {name for name, desc in donor_hals.items()
-                if any(str(hal["optional"]).lower() != "true" for hal in desc)}
-    # Static names only: vendor manifests and device fragments may add providers.
-    not_in_base = sorted(required - set(coral_hals))
+
+    target_level, target_path, per_matrix = audit_target_level(device_xml, matrix)
+    selected = matrix.get(target_path)
+    target_required = required_names(selected) if selected else set()
+    target_missing = sorted(target_required - set(coral_hals))
+
+    # The donor's "device" matrix can contain optional OPPO features. Keep it
+    # separate; never count the whole set as universal device requirements.
+    donor_specific = matrix.get("/system/etc/vintf/compatibility_matrix.device.xml", {})
+    donor_oplus = sorted(name for name in donor_specific
+                         if name.startswith("vendor.oplus."))
     dirs = {name: directory_entry_names(image, name) for name in INIT_DIRS}
     oplus_init = sorted({entry for names in dirs.values() if names
                          for entry in names if "oplus" in entry.lower() or
@@ -146,35 +171,40 @@ def analyze(image, device_manifest):
               for part in ("/system", "/system_ext", "/product", "/my_product")}
     link_info = inspect_links(image)
     return {
-        "target": "coral", "status": ("STATIC_REVIEW_ONLY_NOT_BOOTABLE" if matrix else
-                                     "BLOCKED_NO_FRAMEWORK_MATRIX"),
-        "build_props": builds, "vintf_directories": listings,
+        "target": "coral",
+        "status": ("STATIC_REVIEW_ONLY_NOT_BOOTABLE" if selected else
+                   "BLOCKED_TARGET_LEVEL_MATRIX_MISSING"),
+        "build_props": builds, "coral_target_fcm_level": target_level,
+        "target_level_matrix": target_path,
+        "vintf_directories": listings,
         "vintf_matrix_candidates": matrix_files,
         "vintf_matrix_present": matrix_presence,
-        "framework_matrix_names_parsed": len(matrix),
-        "donor_required_hal_names": sorted(required),
+        "per_matrix_summary": per_matrix,
+        "target_level_potentially_required_names": sorted(target_required),
+        "target_level_names_absent_from_base_coral_manifest": target_missing,
+        "target_level_absent_name_count": len(target_missing),
+        "donor_device_matrix_oplus_names": donor_oplus,
         "coral_base_manifest_hal_names": sorted(coral_hals),
-        "required_not_in_coral_base_manifest": not_in_base,
-        "required_not_in_base_manifest_count": len(not_in_base),
-        "warning_vintf": ("This is a name-only *triage* against one coral base manifest. "
-                          "Actual generated vendor/odm manifest fragments and versions "
-                          "must be checked with checkvintf before compatibility claims."),
+        "warning_vintf": (
+            "VINTF FCM levels 7/8 and dated matrices are ALTERNATIVES, not one "
+            "merged list. Missing names are rough static triage, NOT proof of "
+            "missing HALs; assembled vendor/odm fragments, versions, optional "
+            "requirements, kernel compatibility and checkvintf decide viability."),
         "mount_links": link_info,
         "oplus_init_file_count": len(oplus_init),
         "oplus_init_sample": oplus_init[:40],
         "gating_questions": [
-            "Can the donor framework matrix be satisfied by the assembled Pixel vendor and odm manifests?",
-            "Do embedded system_ext/product links mount at the donor's intended paths?",
-            "Will ColorOS init and Pixel service property contexts co-exist under enforcing SELinux?",
-            "Does ColorOS provide working userspace interfaces for Pixel Citadel/IR and CHRE/Oslo?",
-            "Are there donor factory ADB authorization artifacts to exclude?"
+            "Can the FCM level 7 framework matrix be satisfied by full assembled Pixel vendor/odm fragments?",
+            "Do embedded system_ext/product symlinks resolve during first-stage mount?",
+            "Can ColorOS init and Pixel service property contexts coexist with enforcing SELinux?",
+            "Does ColorOS userspace support Pixel Citadel/IR and CHRE/Oslo interfaces?",
+            "Can all donor-supplied ADB authorization artifacts be excluded?"
         ],
         "adb_keys_link_present": link_info.get("/adb_keys", {}).get("exists", False),
-        "adb_keys_target_present": (debugfs(image, "stat /product/etc/security/adb_keys") is not None),
-        "security": ("Any donor adb_keys must be removed from the actual port. "
-                     "Never authorize arbitrary hosts by default."),
+        "adb_keys_target_present": (
+            debugfs(image, "stat /product/etc/security/adb_keys") is not None),
+        "security": "Never package pre-authorized donor ADB host keys.",
     }
-
 
 def main():
     p = argparse.ArgumentParser()
