@@ -20,10 +20,10 @@ PROPS = [
     "ro.build.version.security_patch", "ro.treble.enabled", "ro.vndk.version",
     "ro.product.first_api_level", "ro.system.build.version.sdk",
 ]
-MATRICES = (
-    "/system/etc/vintf/compatibility_matrix.xml",
-    "/system_ext/etc/vintf/compatibility_matrix.xml",
-    "/product/etc/vintf/compatibility_matrix.xml",
+VINTF_DIRS = (
+    "/system/etc/vintf",
+    "/system_ext/etc/vintf",
+    "/product/etc/vintf",
 )
 LINKS = ("/system/product", "/system/system_ext", "/product", "/system_ext",
          "/init", "/adb_keys")
@@ -87,6 +87,17 @@ def directory_entry_names(image, directory):
     return sorted(set(re.findall(r"/\d+/\d+/\d+/\d+/([^/\n]+)/", raw)) - {".", ".."})
 
 
+def matrix_paths_from_listings(listings):
+    paths = []
+    for directory, entries in listings.items():
+        if entries is None:
+            continue
+        for entry in entries:
+            if entry.startswith("compatibility_matrix") and entry.endswith(".xml"):
+                paths.append(directory + "/" + entry)
+    return sorted(set(paths))
+
+
 def inspect_links(image):
     result = {}
     for path in LINKS:
@@ -110,15 +121,19 @@ def analyze(image, device_manifest):
     if not device_manifest.is_file():
         raise ValueError("Missing pinned coral device HAL manifest")
     coral_hals = parse_hals(device_manifest.read_text())
+    listings = {path: directory_entry_names(image, path) for path in VINTF_DIRS}
+    matrix_files = matrix_paths_from_listings(listings)
     matrix = {}
     matrix_presence = {}
-    for path in MATRICES:
+    for path in matrix_files:
         content = read(image, path)
         matrix_presence[path] = content is not None
         if content is not None:
             matrix[path] = parse_hals(content)
-    donor_hals = {name: desc for section in matrix.values()
-                  for name, desc in section.items()}
+    donor_hals = {}
+    for section in matrix.values():
+        for name, desc in section.items():
+            donor_hals.setdefault(name, []).extend(desc)
     required = {name for name, desc in donor_hals.items()
                 if any(str(hal["optional"]).lower() != "true" for hal in desc)}
     # Static names only: vendor manifests and device fragments may add providers.
@@ -131,8 +146,12 @@ def analyze(image, device_manifest):
               for part in ("/system", "/system_ext", "/product", "/my_product")}
     link_info = inspect_links(image)
     return {
-        "target": "coral", "status": "STATIC_REVIEW_ONLY_NOT_BOOTABLE",
-        "build_props": builds, "vintf_matrix_present": matrix_presence,
+        "target": "coral", "status": ("STATIC_REVIEW_ONLY_NOT_BOOTABLE" if matrix else
+                                     "BLOCKED_NO_FRAMEWORK_MATRIX"),
+        "build_props": builds, "vintf_directories": listings,
+        "vintf_matrix_candidates": matrix_files,
+        "vintf_matrix_present": matrix_presence,
+        "framework_matrix_names_parsed": len(matrix),
         "donor_required_hal_names": sorted(required),
         "coral_base_manifest_hal_names": sorted(coral_hals),
         "required_not_in_coral_base_manifest": not_in_base,
@@ -150,7 +169,8 @@ def analyze(image, device_manifest):
             "Does ColorOS provide working userspace interfaces for Pixel Citadel/IR and CHRE/Oslo?",
             "Are there donor factory ADB authorization artifacts to exclude?"
         ],
-        "adb_keys_present": link_info.get("/adb_keys", {}).get("exists", False),
+        "adb_keys_link_present": link_info.get("/adb_keys", {}).get("exists", False),
+        "adb_keys_target_present": (debugfs(image, "stat /product/etc/security/adb_keys") is not None),
         "security": ("Any donor adb_keys must be removed from the actual port. "
                      "Never authorize arbitrary hosts by default."),
     }
