@@ -1,10 +1,10 @@
 # ColorOS 17 for Pixel 4 XL (coral)
 
-**Maintainer:** Hecker · **Target:** Pixel 4 XL (`coral`) · **Status:** Stage 0, source/donor compatibility preparation.
+**Maintainer:** Hecker · **Target:** Pixel 4 XL (`coral`) · **Status:** Stage 1, verified donor layout + guarded first-boot candidate (NOT flashable).
 
 A **real ColorOS 17 binary port**, not an AOSP visual theme. The target design combines a third-party PLK110 ColorOS 17 donor GSI with the Pixel's known Android 17 floral kernel, device tree and vendor, then adapts Google Camera, Citadel-backed 3D Face Unlock and Soli Motion Sense.
 
-This is **not bootable or flashable yet**. We have not extracted the donor system, patched framework, assembled an image, or confirmed boot. GitHub contains only scripts, source references and port-specific tests; proprietary images remain on the builder's computer.
+This is **not bootable or flashable yet**. We have inspected the donor ext4 image's embedded partition directories and generated an initial coral fstab compatibility candidate. We have **not** patched the actual donor framework, assembled a working image, or confirmed boot. GitHub contains only scripts, source references and port-specific tests; proprietary images remain on the builder's computer.
 
 ## Development
 
@@ -34,3 +34,13 @@ The bootstrap clones pinned revisions under `work/`, rechecks revision identity 
 - [Community OnePlus 7 Pro ColorOS 17 port](https://github.com/nathanatgit/oneplus7-coloros17-port): reference architecture only; its images are incompatible with coral.
 
 See [docs/PORTING_PLAN.md](docs/PORTING_PLAN.md) for milestone boundaries and failure criteria.
+
+
+## Verified ColorOS 17 donor / first-boot candidate
+
+- PLK110 donor SHA-256: `2842e697e30a04513050eefbf295e1f7911733ef9d7e964a028ec91e75efef64`.
+- One **6,584,750,080-byte raw ext4 `system.img`**, with embedded `/system_ext`, `/product`, `/my_product`, `/my_stock` and other `my_*` directories.
+- Coral's existing fstab mounts separate product/system_ext; first-boot candidate comments out these rows to expose the donor directories. Vendor and encrypted userdata mount rows remain untouched.
+- Physical fit, first-boot AVB descriptors, linker/SELinux/VINTF compatibility and donor's embedded ADB key require further validation. The filesystem is near full and its estimated minimum size equals the current image size.
+
+See [verified donor layout](docs/DONOR_LAYOUT.md) and [first-boot candidate tool](tools/firstboot_preflight.py). The current candidate workflow publishes **only a generated fstab and text reports**, never a flashable image.
