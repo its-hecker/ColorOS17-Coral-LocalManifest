@@ -20,6 +20,20 @@ class MatrixTests(unittest.TestCase):
         self.assertEqual(data["android.hardware.camera.provider"][0]["versions"], ["2.4"])
         self.assertEqual(data["android.hardware.foo"][0]["optional"], "true")
 
+    def test_dynamic_framework_matrix_paths(self):
+        lists = {
+            "/system/etc/vintf": ["manifest.xml",
+                                   "compatibility_matrix.2026.xml",
+                                   "compatibility_matrix.device.xml"],
+            "/system_ext/etc/vintf": ["compatibility_matrix.xml"],
+            "/product/etc/vintf": None,
+        }
+        self.assertEqual(m.matrix_paths_from_listings(lists), [
+            "/system/etc/vintf/compatibility_matrix.2026.xml",
+            "/system/etc/vintf/compatibility_matrix.device.xml",
+            "/system_ext/etc/vintf/compatibility_matrix.xml"
+        ])
+
     def test_no_raw_properties_leaked(self):
         raw = """ro.build.version.sdk=37
 persist.security.key=secret
