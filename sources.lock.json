@@ -98,6 +98,35 @@
       "system_img_filesystem": "ext4",
       "checked_by": "GitHub Actions run 44826418869",
       "note": "ZIP header + inner ext4 superblock only; internal directory tree not yet inspected"
+    },
+    "internal_layout": {
+      "verified_by": "GitHub Actions run 44828896866",
+      "fs_root_dirs": [
+        "system",
+        "system_ext",
+        "product",
+        "my_product",
+        "my_stock",
+        "my_bigball",
+        "my_carrier",
+        "my_company",
+        "my_engineering",
+        "my_heytap",
+        "my_manifest",
+        "my_preload",
+        "my_region",
+        "my_reserve",
+        "odm"
+      ],
+      "system_nested_links": [
+        "system/product",
+        "system/system_ext"
+      ],
+      "block_count": 1607605,
+      "free_blocks": 39791,
+      "block_size": 4096,
+      "estimated_minimum_blocks": 1607605,
+      "note": "Top-level directories contain ColorOS payload; link types and boot-time mount behavior still need validation"
     }
   },
   "warnings": [
