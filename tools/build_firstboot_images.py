@@ -438,6 +438,8 @@ def load_base_misc(rom_root):
         paths = [
             *sorted(base.glob("*/META/misc_info.txt")),
             folder / "superimage_intermediates/misc_info.txt",
+            folder / "superimage_debug_intermediates/misc_info.txt",
+            folder / "superimage-nodeps_intermediates/misc_info.txt",
             folder / "super_empty_intermediates/misc_info.txt",
         ]
         source = next((path for path in paths if path.is_file()), None)
@@ -467,6 +469,19 @@ def load_base_misc(rom_root):
     for name in info["super_partition_groups"].split():
         if not info.get("super_" + name + "_group_size"):
             raise ValueError("Missing super group size for " + name)
+    # Cross-check metadata against the project's pinned coral BoardConfig.
+    board = WORK / "hardware/device/BoardConfig-common.mk"
+    if board.is_file():
+        contents = board.read_text()
+        for key, expected_key in (
+            ("BOARD_SUPER_PARTITION_SIZE", "super_partition_size"),
+            ("BOARD_GOOGLE_DYNAMIC_PARTITIONS_SIZE",
+             "super_google_dynamic_partitions_group_size"),
+        ):
+            match = re.search(r"^" + key + r"\s*:=\s*(\d+)", contents, re.M)
+            if match and info.get(expected_key) and int(info[expected_key]) != int(match.group(1)):
+                raise ValueError("Super geometry differs from pinned device board: " +
+                                 expected_key + " (" + str(source) + ")")
     return info, source
 
 
