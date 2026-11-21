@@ -50,3 +50,32 @@ The original Pixel boot/kernel/vendor firmware and HALs remain untouched. Theref
 does not guarantee all biometric/Soli HAL processes are gone and does not establish
 VINTF/SELinux/first-boot compatibility. It is still an untested engineering archive,
 not a recovery OTA or a verified flashable image.
+
+## Chained AVB rollback location and safe resume
+
+AVB chained images record the rollback slot in the **parent** vbmeta's chain
+descriptor, not the chained child's header. For this coral base, parent
+`vbmeta.img` declares `vbmeta_system` at slot 1; the child
+`vbmeta_system.img` header has location 0. Do not disable AVB or change the
+parent descriptor just to satisfy a mistaken child-header check.
+
+Run the `tests/test_chained_avb.py` regression test and use
+`--rootless --minimal-boot --check-inputs-only` to verify the baseline
+**before** any new multigigabyte image copies.
+
+If the previous failure occurred before image signing and the minimal staging
+directory still contains an exact unmodified donor `system.img`, a valid
+`vendor-raw.img`, and a completed property-context audit with zero edits,
+`--resume-staged --rootless --minimal-boot --output DIR` reuses that same
+staging directory. It refuses any edited, signed, or ambiguous staging image.
+Otherwise choose a fresh output folder.
+
+```bash
+python3 -m unittest discover -s tests -p 'test_chained_avb.py' -v
+python3 tools/build_firstboot_images.py --rom-root "$HOME/coloros17-coral/aosp" --rootless --minimal-boot --check-inputs-only
+python3 tools/build_firstboot_images.py --rom-root "$HOME/coloros17-coral/aosp" --rootless --minimal-boot --resume-staged --output "$PWD/work/engineering-minimal-20261121-045148"
+```
+
+Even a fully signed archive remains an unverified engineering output, not a
+recovery ZIP or a known bootable ROM. AVB preflight does not verify Android
+framework compatibility, SELinux policy, first-stage mounts, or VINTF.
