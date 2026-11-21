@@ -518,6 +518,9 @@ def main():
     p.add_argument("--output", type=Path, default=WORK / "engineering")
     p.add_argument("--rootless", action="store_true",
                    help="use debugfs rather than privileged loop mounts")
+    p.add_argument("--minimal-boot", action="store_true",
+                   help="first-boot profile: omit optional Pixel app transplants, including "
+                        "camera, IMS, Face ID and Motion Sense userland; retain hardware firmware")
     p.add_argument("--check-inputs-only", action="store_true",
                    help="verify rootless image inputs, without staging or copying ColorOS")
     args = p.parse_args()
@@ -531,10 +534,16 @@ def main():
         raise ValueError("Build Pixel 4 XL vendor.img first")
     if args.check_inputs_only and not args.rootless:
         raise ValueError("--check-inputs-only requires --rootless")
-    if args.rootless:
+    if args.minimal_boot and not args.rootless:
+        raise ValueError("--minimal-boot requires --rootless")
+    if args.rootless and not args.minimal_boot:
         result = preflight_rootless_settings(aosp, built)
         print(json.dumps(result, indent=2))
     if args.check_inputs_only:
+        if args.minimal_boot:
+            print(json.dumps({"status": "MINIMAL_INPUTS_READY",
+                              "optional_apk_checks": "SKIPPED_BY_DESIGN",
+                              "donor": str(donor), "baseline": str(built)}, indent=2))
         return
     if out.exists() and any(out.iterdir()):
         raise ValueError("Output directory already contains files: " + str(out))
@@ -546,7 +555,14 @@ def main():
     disk_image(built / "vendor.img", raw_vendor, simg)
     budget = image_size_budget(aosp, system, raw_vendor)
     reserve = budget["remaining_after_reservation_bytes"]
-    if args.rootless:
+    if args.minimal_boot:
+        # First-boot isolation: do not merge app packages built for HeckerOS into
+        # a precompiled ColorOS system. Retain the Pixel kernel and vendor HALs.
+        transplant = {"profile": "minimal-boot", "new_files": [],
+                      "grown_by_bytes": 0, "copied_bytes": 0,
+                      "optional_userland_components": "omitted"}
+        propctx = rootless_reconcile_pixel_property_contexts(system, raw_vendor, out)
+    elif args.rootless:
         transplant = rootless_transplant_pixel(built, system, out, simg, reserve)
         propctx = rootless_reconcile_pixel_property_contexts(system, raw_vendor, out)
     else:
@@ -567,6 +583,9 @@ def main():
         shutil.copyfile(src, target)
         images.append(target)
     manifest = {"status": "ENGINEERING_IMAGES_BUILT_UNTESTED",
+                "profile": "minimal-boot" if args.minimal_boot else "feature-staging",
+                "optional_userland_merged": not args.minimal_boot,
+                "baseline_vendor_kernel_retained": True,
                 "target": "coral", "donor": "ColorOS17 PLK110",
                 "kernel": "pinned floral Android17 base",
                 "pixel_transplant": transplant, "property_contexts": propctx, "avb": avb,
