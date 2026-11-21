@@ -203,3 +203,39 @@ nor does it verify APEX, VNDK, linker namespaces or enforcing SELinux.
 
 Do not modify/re-sign the completed engineering images until the candidate
 is reviewed against the actual assembled donor and vendor artifacts.
+
+## Build a separate signed engineering image with the compatible Pixel FCM
+
+After `prepare_coloros_device_fcm.py` reports
+`CANDIDATE_BASE_VINTF_COMPATIBLE_APEX_UNCHECKED`, integrate that vetted
+framework matrix into a NEW minimal boot engineering image. The original
+working archive and signed image directory are never edited or overwritten.
+
+```bash
+cd ~/coloros17-coral-port
+python3 -m unittest discover -s tests -p 'test_build_vintf_candidate_images.py' -v
+CANDIDATE=$(find "$PWD/work" -maxdepth 1 -type d -name 'vintf-device-fcm-*' | sort | tail -n 1)
+BASELINE="$PWD/work/engineering-minimal-20261121-045148"
+OUT="$PWD/work/engineering-minimal-vintf-$(date +%Y%m%d-%H%M%S)"
+python3 tools/build_vintf_candidate_images.py \
+  --rom-root "$HOME/coloros17-coral/aosp" \
+  --candidate "$CANDIDATE" \
+  --baseline "$BASELINE" \
+  --output "$OUT"
+ls -lh "$OUT"
+```
+
+The builder verifies the candidate against the exact exported Pixel vendor
+HALs, reruns the partial host VINTF check, rejects changed baseline boot/AVB
+images or a different vendor manifest, then starts from the immutable unsigned
+ColorOS donor. It installs only
+`/system/etc/vintf/compatibility_matrix.device.xml`, retaining the SELinux
+xattr, owner/mode of a neighboring ColorOS platform matrix. It checks ext4
+integrity, reaudits property contexts, regenerates `vbmeta_system.img`
+with AVB verification enabled, regenerates super and packages a *new* ZIP.
+
+**Caution:** The vendor image and boot image remain those from the original
+minimal baseline. This is NOT a runtime-validated port and does not claim
+APEX, linker, VNDK, kernel FCM or SELinux policy compatibility. The resulting
+engineering ZIP is NOT an OTA or a safe-to-flash ROM release. Do not use a
+`COMPATIBLE` base-VINTF result as permission to flash.
