@@ -1,5 +1,6 @@
 """Fail-closed tests for building a separate ColorOS VINTF candidate image."""
 import json
+import shutil
 import sys
 import tempfile
 import unittest
@@ -62,11 +63,13 @@ class VintfImageBuildTests(unittest.TestCase):
                      "1", "IDisplay", "default")}
         with patch.object(candidate, "read_vendor_hal_instances",
                           return_value=expected), \
+             patch.object(candidate, "validate_matrix_delta_against_donor",
+                          return_value=expected), \
              patch.object(candidate.subprocess, "run",
                           return_value=SimpleNamespace(
                               stdout="COMPATIBLE\n", returncode=0)):
             matrix, report, entries = candidate.verify_candidate(
-                self.candidate, self.aosp)
+                self.candidate, self.aosp, self.root / "donor.img")
         self.assertEqual(matrix, self.xml)
         self.assertEqual(entries, expected)
         self.assertEqual(report["hal_entries_added"], 1)
@@ -74,8 +77,57 @@ class VintfImageBuildTests(unittest.TestCase):
     def test_candidate_changes_block_build(self):
         self.xml.write_text(self.xml.read_text().replace(
             "<version>1</version>", "<version>9</version>"))
-        with self.assertRaisesRegex(ValueError, "does not match"):
-            candidate.verify_candidate(self.candidate, self.aosp)
+        expected = {("aidl", "com.google.hardware.pixel.display",
+                     "1", "IDisplay", "default")}
+        class EmptyDonor:
+            def __init__(self, path):
+                pass
+            def exists(self, path):
+                return False
+        with patch.object(candidate, "Ext4", EmptyDonor), \
+             self.assertRaisesRegex(ValueError, "differs from original"):
+            candidate.validate_matrix_delta_against_donor(
+                self.root / "donor.img", self.xml, expected)
+
+    def test_unchanged_mandatory_donor_hal_is_preserved(self):
+        expected = {("aidl", "com.google.hardware.pixel.display",
+                     "1", "IDisplay", "default")}
+        original = (
+            '<compatibility-matrix version="1.0" type="framework">'
+            '<hal format="hidl"><name>vendor.coloros.existing</name>'
+            '<version>1.0</version><interface><name>IExisting</name>'
+            '<instance>default</instance></interface></hal>'
+            '</compatibility-matrix>'
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = Path(tmp)
+            before = (folder / "coloros_system/system/etc/vintf/"
+                      "compatibility_matrix.device.xml")
+            before.parent.mkdir(parents=True)
+            before.write_text(original)
+            generated = candidate.ensure_matrix(folder, sorted(expected))
+            shutil.copyfile(generated, self.xml)
+
+        class DonorWithExistingMatrix:
+            def __init__(self, image):
+                pass
+            def exists(self, path):
+                return path == candidate.DESTINATION
+            def export_file(self, path, dst):
+                dst.write_text(original)
+
+        with patch.object(candidate, "Ext4", DonorWithExistingMatrix):
+            self.assertEqual(
+                candidate.validate_matrix_delta_against_donor(
+                    self.root / "donor.img", self.xml, expected),
+                expected)
+        # A change to the preexisting mandatory HAL must be rejected.
+        self.xml.write_text(self.xml.read_text().replace(
+            "vendor.coloros.existing", "vendor.coloros.changed"))
+        with patch.object(candidate, "Ext4", DonorWithExistingMatrix), \
+             self.assertRaisesRegex(ValueError, "differs from original"):
+            candidate.validate_matrix_delta_against_donor(
+                self.root / "donor.img", self.xml, expected)
 
     def test_build_refuses_to_overwrite_previous_directory(self):
         out = self.root / "finished"
