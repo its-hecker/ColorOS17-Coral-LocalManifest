@@ -28,3 +28,25 @@ If all safety checks pass, the `tools/build_firstboot_images.py` program:
 Requires Android `repo`, Git LFS, working HeckerOS Android 17 build dependencies and root or passwordless sudo for loop-mounting ext4 images. The code does not disable SELinux or automatically authorize ADB clients. GitHub actions validate syntax, isolated source audits, first-stage patch generation and synthetic safety cases; the complete multi-GB Android build can only be verified on a suitable build server.
 
 **If a safety gate fails, no engineering ZIP is produced.** Preserve the full log for further fixes. All output remains in `work/` and is excluded from Git.
+
+## Minimal first-boot profile on unprivileged servers
+
+Use this profile for ColorOS first-boot compatibility before adding Pixel-exclusive apps. It reuses
+the already compiled HeckerOS hardware outputs and does not use sudo or rebuild the Android tree.
+
+```bash
+python3 -m unittest discover -s tests -p 'test_minimal_boot.py' -v
+python3 tools/build_firstboot_images.py --rom-root "$HOME/coloros17-coral/aosp" --rootless --minimal-boot --check-inputs-only
+OUT="$PWD/work/engineering-minimal-$(date +%Y%m%d-%H%M%S)"
+python3 tools/build_firstboot_images.py --rom-root "$HOME/coloros17-coral/aosp" --rootless --minimal-boot --output "$OUT"
+```
+
+This mode skips all optional Pixel app transplants, including Google Camera, IMS userland,
+Face ID and Motion Sense app integration. Missing FloralMotionSenseSettings no longer blocks
+this profile. ColorOS donor property-context scanning, AVB checks, and super-image assembly
+are still required and can stop the build.
+
+The original Pixel boot/kernel/vendor firmware and HALs remain untouched. Therefore this
+does not guarantee all biometric/Soli HAL processes are gone and does not establish
+VINTF/SELinux/first-boot compatibility. It is still an untested engineering archive,
+not a recovery OTA or a verified flashable image.
