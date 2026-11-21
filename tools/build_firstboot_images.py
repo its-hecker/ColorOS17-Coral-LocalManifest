@@ -387,8 +387,13 @@ def sign_system(aosp, system, vbmeta, out):
     base_info = avb_info(avb, base_system_meta)
     rollback = parse_avb_value(base_info, "Rollback Index")
     location = parse_avb_value(base_info, "Rollback Index Location")
-    if location != 1:
-        raise ValueError("Unexpected Pixel vbmeta_system rollback location")
+    # AVB chained vbmeta headers use rollback index location 0. The slot 1
+    # association lives in the *parent* vbmeta chain descriptor, validated
+    # separately above. Requiring location 1 in both places is incorrect.
+    if location != 0:
+        raise ValueError(
+            "Unexpected chained vbmeta_system header rollback location "
+            + str(location) + " (expected 0; parent chain uses location 1)")
 
     # Ensure 128 MiB minimum free for the hashtree and AVB footer. No FEC
     # generated in this experimental port; cryptographic verification stays on.
@@ -512,12 +517,74 @@ def preflight_rootless_settings(aosp, built):
     return {"status": "MOTION_SETTINGS_IN_IMAGE", "apk": str(apk), "image": str(image)}
 
 
+
+def avb_preflight(aosp):
+    """Validate compiled root/chained AVB layout without staging large images."""
+    avb = avb_args(aosp)
+    key = aosp / "external/avb/test/data/testkey_rsa2048.pem"
+    if not key.is_file():
+        raise ValueError("Pinned Android signing key missing: " + str(key))
+    built = aosp / "out/target/product/coral"
+    root_info = avb_info(avb, built / "vbmeta.img")
+    if parse_avb_value(root_info, "Flags") != 0:
+        raise ValueError("Refusing root vbmeta with verification disabled")
+    with tempfile.TemporaryDirectory(prefix="coloros17-avb-check-") as directory:
+        key_hash = validate_root_vbmeta_chain(avb, root_info, key, Path(directory))
+    base = avb_info(avb, built / "vbmeta_system.img")
+    header_location = parse_avb_value(base, "Rollback Index Location")
+    if header_location != 0:
+        raise ValueError("Chained vbmeta_system must have header rollback location 0; "
+                         "got " + str(header_location))
+    return {"root_chain_location": 1, "chained_header_location": header_location,
+            "base_rollback_index": parse_avb_value(base, "Rollback Index"),
+            "root_trusted_vbmeta_system_key_sha1": key_hash,
+            "verified_root_flags": 0}
+
+
+def checked_resume_minimal_staging(out, donor):
+    """Reuse an already-staged donor only if unmodified and unsigned.
+
+    Stops if previous run had applied context patches, AVB signing, or image
+    generation. In those cases choose a new output folder instead.
+    """
+    from rootless_ext4 import check_image
+    if not out.is_dir():
+        raise ValueError("Staged output directory not found: " + str(out))
+    for path in ("vbmeta_system.img", "super.img",
+                 "ColorOS17-coral-FIRSTBOOT-UNTESTED-images.zip",
+                 "engineering-report.json"):
+        if (out / path).exists():
+            raise ValueError("Refusing to resume from a signed or finished directory: " +
+                             str(out / path))
+    system, vendor = out / "system.img", out / "vendor-raw.img"
+    check_raw_ext4(system)
+    check_raw_ext4(vendor)
+    # Reusing a previously edited / signed system could append a second AVB
+    # footer, so accept *only* an exact copy of the immutable donor.
+    if system.stat().st_size != donor.stat().st_size or sha256(system) != sha256(donor):
+        raise ValueError("Staged system differs from original donor; use a new output "
+                         "directory instead of resuming")
+    report = out / "propctx/report.json"
+    if not report.is_file():
+        raise ValueError("Missing previous property-context audit; use new output")
+    previous = json.loads(report.read_text())
+    if previous.get("blocked") or any(x.get("status") == "candidate generated"
+                                     for x in previous.get("unmodified", [])):
+        raise ValueError("Previous context edits or unresolved collisions detected; "
+                         "use a fresh output directory")
+    check_image(system)
+    check_image(vendor)
+    return system, vendor
+
+
 def main():
     p = argparse.ArgumentParser(description="Generate signed but UNTESTED firstboot images")
     p.add_argument("--rom-root", type=Path, required=True)
     p.add_argument("--output", type=Path, default=WORK / "engineering")
     p.add_argument("--rootless", action="store_true",
                    help="use debugfs rather than privileged loop mounts")
+    p.add_argument("--resume-staged", action="store_true",
+                   help="reuse an unchanged minimal staging directory after AVB preflight failure")
     p.add_argument("--minimal-boot", action="store_true",
                    help="first-boot profile: omit optional Pixel app transplants, including "
                         "camera, IMS, Face ID and Motion Sense userland; retain hardware firmware")
@@ -536,6 +603,12 @@ def main():
         raise ValueError("--check-inputs-only requires --rootless")
     if args.minimal_boot and not args.rootless:
         raise ValueError("--minimal-boot requires --rootless")
+    if args.resume_staged and not (args.rootless and args.minimal_boot):
+        raise ValueError("--resume-staged requires --rootless --minimal-boot")
+    if args.resume_staged and args.check_inputs_only:
+        raise ValueError("--resume-staged cannot be combined with --check-inputs-only")
+    if args.minimal_boot:
+        print("AVB compiled baseline preflight:", json.dumps(avb_preflight(aosp), indent=2))
     if args.rootless and not args.minimal_boot:
         result = preflight_rootless_settings(aosp, built)
         print(json.dumps(result, indent=2))
@@ -545,14 +618,19 @@ def main():
                               "optional_apk_checks": "SKIPPED_BY_DESIGN",
                               "donor": str(donor), "baseline": str(built)}, indent=2))
         return
-    if out.exists() and any(out.iterdir()):
-        raise ValueError("Output directory already contains files: " + str(out))
-    out.mkdir(parents=True, exist_ok=True)
-    system = out / "system.img"
-    shutil.copyfile(donor, system)
-    raw_vendor = out / "vendor-raw.img"
+    if args.resume_staged:
+        system, raw_vendor = checked_resume_minimal_staging(out, donor)
+        print("Reusing verified unsigned minimal staging:", out)
+    else:
+        if out.exists() and any(out.iterdir()):
+            raise ValueError("Output directory already contains files: " + str(out))
+        out.mkdir(parents=True, exist_ok=True)
+        system = out / "system.img"
+        shutil.copyfile(donor, system)
+        raw_vendor = out / "vendor-raw.img"
+        disk_image(built / "vendor.img", raw_vendor,
+                   executable(aosp, "simg2img"))
     simg = executable(aosp, "simg2img")
-    disk_image(built / "vendor.img", raw_vendor, simg)
     budget = image_size_budget(aosp, system, raw_vendor)
     reserve = budget["remaining_after_reservation_bytes"]
     if args.minimal_boot:
