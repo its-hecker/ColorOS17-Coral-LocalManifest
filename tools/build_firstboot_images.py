@@ -421,21 +421,53 @@ def sign_system(aosp, system, vbmeta, out):
 
 
 def load_base_misc(rom_root):
-    import glob
-    import zipfile as z
-    folder = rom_root / "out/target/product/coral/obj/PACKAGING/target_files_intermediates"
-    zips = [Path(f) for f in glob.glob(str(folder / "*target_files*.zip"))]
-    if not zips:
-        raise ValueError("No AOSP target-files archive after coral build")
-    path = max(zips, key=lambda p: p.stat().st_mtime)
-    with z.ZipFile(path) as archive:
-        raw = archive.read("META/misc_info.txt").decode("utf-8")
+    """Load authoritative dynamic partition metadata from this *built* target.
+
+    Prefer target-files, then their extracted META/misc_info.txt, then
+    build-generated super metadata. Never synthesize a layout from guesses.
+    """
+    folder = rom_root / "out/target/product/coral/obj/PACKAGING"
+    base = folder / "target_files_intermediates"
+    zips = sorted(base.glob("*target_files*.zip"),
+                  key=lambda p: p.stat().st_mtime, reverse=True)
+    if zips:
+        with zipfile.ZipFile(zips[0]) as archive:
+            raw = archive.read("META/misc_info.txt").decode("utf-8")
+        source = zips[0]
+    else:
+        paths = [
+            *sorted(base.glob("*/META/misc_info.txt")),
+            folder / "superimage_intermediates/misc_info.txt",
+            folder / "super_empty_intermediates/misc_info.txt",
+        ]
+        source = next((path for path in paths if path.is_file()), None)
+        if source is None:
+            raise ValueError(
+                "No authoritative AOSP super metadata found. Generate it from "
+                "the existing compiled tree using: "
+                "cd ~/coloros17-coral/aosp && source build/envsetup.sh && "
+                "lunch hecker_coral-hecker_suite-userdebug && "
+                "USE_RBE=true m target-files-package; "
+                "then resume using --resume-signed.")
+        raw = source.read_text()
     info = {}
     for line in raw.splitlines():
-        if "=" in line and not line.startswith("#"):
+        if "=" in line and not line.lstrip().startswith("#"):
             k, v = line.split("=", 1)
             info[k.strip()] = v.strip()
-    return info, path
+    required = ["super_metadata_device", "super_block_devices",
+                "super_partition_groups", "ab_update"]
+    missing = [key for key in required if not info.get(key)]
+    if missing:
+        raise ValueError("Build super metadata is incomplete (" +
+                         ", ".join(missing) + ") in " + str(source))
+    for name in info["super_block_devices"].split():
+        if not info.get("super_" + name + "_device_size"):
+            raise ValueError("Missing super device size for " + name)
+    for name in info["super_partition_groups"].split():
+        if not info.get("super_" + name + "_group_size"):
+            raise ValueError("Missing super group size for " + name)
+    return info, source
 
 
 def create_super(aosp, sysimg, vendor, out):
@@ -577,6 +609,72 @@ def checked_resume_minimal_staging(out, donor):
     return system, vendor
 
 
+
+def checked_resume_signed_minimal(out, aosp, donor):
+    """Resume only after confirming signatures, immutable donor and provenance.
+
+    Checks a signed ColorOS system and vbmeta_system but does not write them.
+    Never append another hashtree/footer to an already signed image.
+    """
+    if not out.is_dir():
+        raise ValueError("Signed output directory missing: " + str(out))
+    if any((out / item).exists() for item in
+           ("super.img", "engineering-report.json",
+            "ColorOS17-coral-FIRSTBOOT-UNTESTED-images.zip")):
+        raise ValueError("Output already contains completed/super artifacts; "
+                         "refusing signed resume")
+    system = out / "system.img"
+    raw_vendor = out / "vendor-raw.img"
+    vbmeta = out / "vbmeta_system.img"
+    audit = out / "propctx/report.json"
+    for path in (system, raw_vendor, vbmeta, audit):
+        if not path.is_file() or path.stat().st_size == 0:
+            raise ValueError("Missing signed-staging input: " + str(path))
+    check_raw_ext4(system)
+    check_raw_ext4(raw_vendor)
+    report = json.loads(audit.read_text())
+    if report.get("blocked") or any(
+            row.get("status") not in ("no changes", "no change", "unchanged")
+            for row in report.get("unmodified", [])):
+        raise ValueError("Signed stage contains unverified property-context changes; "
+                         "use fresh directory and inspect audit")
+    # For this minimal boot, the system bytes before the AVB tree must equal
+    # the pinned unmodified donor. Streaming checks avoid multi-gigabyte RAM.
+    if system.stat().st_size <= donor.stat().st_size:
+        raise ValueError("Expected appended AVB hashtree on staged ColorOS system")
+    before = hashlib.sha256()
+    with system.open("rb") as image:
+        remaining = donor.stat().st_size
+        while remaining:
+            chunk = image.read(min(8 * 1024 * 1024, remaining))
+            if not chunk:
+                raise ValueError("Staged system image truncated during validation")
+            before.update(chunk)
+            remaining -= len(chunk)
+    if before.hexdigest() != sha256(donor):
+        raise ValueError("Signed system base differs from original ColorOS donor")
+    avb = avb_args(aosp)
+    key = aosp / "external/avb/test/data/testkey_rsa2048.pem"
+    run(*avb, "verify_image", "--image", vbmeta, "--key", key)
+    signed_info = avb_info(avb, vbmeta)
+    original_info = avb_info(
+        avb, aosp / "out/target/product/coral/vbmeta_system.img")
+    if parse_avb_value(signed_info, "Rollback Index") != \
+            parse_avb_value(original_info, "Rollback Index"):
+        raise ValueError("Signed rollback index does not match compiled baseline")
+    if parse_avb_value(signed_info, "Rollback Index Location") != 0:
+        raise ValueError("Signed chained vbmeta header rollback location is not 0")
+    if "Hashtree descriptor" not in signed_info:
+        raise ValueError("Signed ColorOS vbmeta has no system hashtree")
+    return system, raw_vendor, vbmeta, {
+        "rollback_index": parse_avb_value(signed_info, "Rollback Index"),
+        "rollback_location": 0,
+        "vbmeta_system": str(vbmeta),
+        "verified_root_flags": 0,
+        "verification": "avbtool verify_image --key; donor prefix matches",
+    }
+
+
 def main():
     p = argparse.ArgumentParser(description="Generate signed but UNTESTED firstboot images")
     p.add_argument("--rom-root", type=Path, required=True)
@@ -585,6 +683,8 @@ def main():
                    help="use debugfs rather than privileged loop mounts")
     p.add_argument("--resume-staged", action="store_true",
                    help="reuse an unchanged minimal staging directory after AVB preflight failure")
+    p.add_argument("--resume-signed", action="store_true",
+                   help="reuse signed minimal ColorOS and vbmeta_system after target-files error")
     p.add_argument("--minimal-boot", action="store_true",
                    help="first-boot profile: omit optional Pixel app transplants, including "
                         "camera, IMS, Face ID and Motion Sense userland; retain hardware firmware")
@@ -607,6 +707,10 @@ def main():
         raise ValueError("--resume-staged requires --rootless --minimal-boot")
     if args.resume_staged and args.check_inputs_only:
         raise ValueError("--resume-staged cannot be combined with --check-inputs-only")
+    if args.resume_signed and not (args.rootless and args.minimal_boot):
+        raise ValueError("--resume-signed requires --rootless --minimal-boot")
+    if args.resume_signed and (args.resume_staged or args.check_inputs_only):
+        raise ValueError("--resume-signed cannot combine with resume-staged/check-only")
     if args.minimal_boot:
         print("AVB compiled baseline preflight:", json.dumps(avb_preflight(aosp), indent=2))
     if args.rootless and not args.minimal_boot:
@@ -618,7 +722,13 @@ def main():
                               "optional_apk_checks": "SKIPPED_BY_DESIGN",
                               "donor": str(donor), "baseline": str(built)}, indent=2))
         return
-    if args.resume_staged:
+    if args.resume_signed:
+        # Load verified geometry *before* touching the previously signed files.
+        load_base_misc(aosp)
+        system, raw_vendor, vbmeta_sys, avb = checked_resume_signed_minimal(
+            out, aosp, donor)
+        print("Reusing validated signed ColorOS images:", out)
+    elif args.resume_staged:
         system, raw_vendor = checked_resume_minimal_staging(out, donor)
         print("Reusing verified unsigned minimal staging:", out)
     else:
@@ -634,12 +744,15 @@ def main():
     budget = image_size_budget(aosp, system, raw_vendor)
     reserve = budget["remaining_after_reservation_bytes"]
     if args.minimal_boot:
-        # First-boot isolation: do not merge app packages built for HeckerOS into
-        # a precompiled ColorOS system. Retain the Pixel kernel and vendor HALs.
         transplant = {"profile": "minimal-boot", "new_files": [],
                       "grown_by_bytes": 0, "copied_bytes": 0,
                       "optional_userland_components": "omitted"}
-        propctx = rootless_reconcile_pixel_property_contexts(system, raw_vendor, out)
+        if args.resume_signed:
+            propctx = {"status": "previously-audited-no-changes",
+                       "report": str(out / "propctx/report.json")}
+        else:
+            propctx = rootless_reconcile_pixel_property_contexts(
+                system, raw_vendor, out)
     elif args.rootless:
         transplant = rootless_transplant_pixel(built, system, out, simg, reserve)
         propctx = rootless_reconcile_pixel_property_contexts(system, raw_vendor, out)
@@ -647,8 +760,9 @@ def main():
         prefix = sudo_prefix()
         transplant = transplant_pixel(built, system, out, simg, prefix, reserve)
         propctx = reconcile_pixel_property_contexts(system, raw_vendor, out, prefix)
-    vbmeta_sys = out / "vbmeta_system.img"
-    avb = sign_system(aosp, system, vbmeta_sys, out)
+    if not args.resume_signed:
+        vbmeta_sys = out / "vbmeta_system.img"
+        avb = sign_system(aosp, system, vbmeta_sys, out)
     budget = image_size_budget(aosp, system, raw_vendor)
     sup = out / "super.img"
     sup_report = create_super(aosp, system, built / "vendor.img", sup)
