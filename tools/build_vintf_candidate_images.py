@@ -23,7 +23,7 @@ from build_firstboot_images import (
     run, sha256, sign_system,
 )
 from check_coloros_vintf_base import make_command
-from prepare_coloros_device_fcm import read_vendor_hal_instances
+from prepare_coloros_device_fcm import ensure_matrix, read_vendor_hal_instances
 from rootless_ext4 import Ext4, check_image
 
 DESTINATION = "/system/etc/vintf/compatibility_matrix.device.xml"
@@ -60,7 +60,35 @@ def candidate_entries(matrix):
     return actual
 
 
-def verify_candidate(candidate, aosp):
+def validate_matrix_delta_against_donor(donor, candidate_matrix, expected):
+    """Recreate the exact approved matrix from the original donor XML.
+
+    The donor may already have required or optional HAL declarations. We must
+    preserve all of them byte-semantically rather than assuming the whole XML
+    contains only the newly added optional Pixel HALs.
+    """
+    if not expected:
+        raise ValueError("Expected HAL additions are empty")
+    fs = Ext4(donor)
+    with tempfile.TemporaryDirectory(prefix="coloros17-fcm-delta-") as tmp:
+        root = Path(tmp)
+        original = root / "coloros_system/system/etc/vintf/compatibility_matrix.device.xml"
+        if fs.exists(DESTINATION):
+            original.parent.mkdir(parents=True, exist_ok=True)
+            fs.export_file(DESTINATION, original)
+        regenerated = ensure_matrix(root, sorted(expected))
+        actual_xml = ET.canonicalize(
+            candidate_matrix.read_text(), strip_text=True)
+        expected_xml = ET.canonicalize(
+            regenerated.read_text(), strip_text=True)
+        if actual_xml != expected_xml:
+            raise ValueError(
+                "Candidate matrix differs from original ColorOS donor plus "
+                "the exact reviewed Pixel HAL additions")
+    return expected
+
+
+def verify_candidate(candidate, aosp, donor):
     reportpath = candidate / "candidate-report.json"
     matrix = candidate / "vintf/coloros_system/system/etc/vintf/compatibility_matrix.device.xml"
     if not reportpath.is_file() or not matrix.is_file():
@@ -75,11 +103,9 @@ def verify_candidate(candidate, aosp):
          item["interface"], item["instance"])
         for item in report.get("matched_vendor_manifest_instances", [])
     }
-    entries = candidate_entries(matrix)
     if not expected or len(expected) != report.get("hal_entries_added"):
         raise ValueError("Candidate report lists inconsistent HAL instances")
-    if entries != expected:
-        raise ValueError("Candidate XML does not match the reviewed HAL list")
+    entries = validate_matrix_delta_against_donor(donor, matrix, expected)
     vendor_root = candidate / "vintf/pixel_vendor"
     if not entries.issubset(read_vendor_hal_instances(vendor_root)):
         raise ValueError("Candidate HALs do not match exported Pixel vendor VINTF")
@@ -122,18 +148,26 @@ def validate_baseline(baseline, aosp, candidate):
 
 
 def install_matrix(system, matrix):
-    """Install XML only when target absent, using peer XML inode metadata."""
+    """Install only the already verified matrix, preserving donor metadata."""
+    from rootless_ext4 import replace_file
     fs = Ext4(system)
     if fs.exists(DESTINATION):
-        raise ValueError("Refusing to overwrite donor VINTF matrix " + DESTINATION)
-    meta = fs.info(REFERENCE)
-    if meta["type"] != "regular" or meta["links"] != 1:
-        raise ValueError("Donor reference VINTF matrix is not a regular file")
-    xattrs = {name: fs.xattr(REFERENCE, name) for name in fs.attrs(REFERENCE)}
-    if "security.selinux" not in xattrs:
-        raise ValueError("No SELinux label on donor framework VINTF reference")
-    fs.create(DESTINATION, "regular", matrix)
-    fs.restore(DESTINATION, meta, xattrs)
+        # The approved candidate was regenerated from this exact existing XML
+        # and the ten reviewed Pixel entries. Preserve its uid/gid/mode/xattrs.
+        replace_file(fs, DESTINATION, matrix)
+        action = "updated_existing_matrix"
+        source_label_path = DESTINATION
+    else:
+        meta = fs.info(REFERENCE)
+        if meta["type"] != "regular" or meta["links"] != 1:
+            raise ValueError("Donor reference VINTF matrix is not a regular file")
+        xattrs = {name: fs.xattr(REFERENCE, name) for name in fs.attrs(REFERENCE)}
+        if "security.selinux" not in xattrs:
+            raise ValueError("No SELinux label on donor framework VINTF reference")
+        fs.create(DESTINATION, "regular", matrix)
+        fs.restore(DESTINATION, meta, xattrs)
+        action = "created_new_matrix"
+        source_label_path = REFERENCE
     with tempfile.TemporaryDirectory(prefix="coloros17-fcm-readback-") as tmp:
         copy = Path(tmp) / "readback.xml"
         fs.export_file(DESTINATION, copy)
@@ -141,17 +175,17 @@ def install_matrix(system, matrix):
             raise ValueError("Written VINTF matrix differs from candidate")
     check_image(system)
     return {"path": DESTINATION, "sha256": sha256(matrix),
-            "peer_label_path": REFERENCE,
+            "action": action, "peer_label_path": source_label_path,
             "selinux_xattr_preserved": True, "device_hal_matrix_entries": True}
 
 
 def run_build(aosp, candidate, baseline, out):
     if out.exists():
         raise ValueError("Output already exists; choose a new path: " + str(out))
-    matrix, candidate_report, entries = verify_candidate(candidate, aosp)
-    built = validate_baseline(baseline, aosp, candidate)
     donor = WORK / "donor/system-for-inspection.img"
     check_raw_ext4(donor)
+    matrix, candidate_report, entries = verify_candidate(candidate, aosp, donor)
+    built = validate_baseline(baseline, aosp, candidate)
     avb_preflight(aosp)
     # Verify complete authoritative super geometry before copying >6 GiB.
     from build_firstboot_images import load_base_misc
