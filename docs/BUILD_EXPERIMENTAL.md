@@ -251,3 +251,25 @@ against the successful candidate, and then replaces the donor matrix while
 preserving its original SELinux xattrs, uid/gid and mode. If no such donor
 matrix exists, the builder instead creates it using a neighboring VINTF
 file's metadata. An unexpected delta stops *before* copying large images.
+
+## Inspect APEX and SELinux inputs after VINTF-integrated build
+
+Run the read-only image inventory before any attempted device testing:
+
+```bash
+cd ~/coloros17-coral-port
+python3 -m unittest discover -s tests -p 'test_audit_apex_selinux_inputs.py' -v
+OUT="$PWD/work/engineering-minimal-vintf-20261121-054439"
+python3 tools/audit_apex_selinux_inputs.py \
+  --output "$OUT" --report "$OUT/apex-selinux-inventory.json"
+python3 -m json.tool "$OUT/apex-selinux-inventory.json"
+```
+
+The tool lists .apex/.capex containers and the presence of SELinux platform,
+system_ext, product and vendor policy inputs. It compares the platform-side
+`*sepolicy_and_mapping.sha256` values with the vendor's corresponding
+`precompiled_sepolicy.*.sha256` values. A hash mismatch does not alone mean
+boot failure: Android may fall back to compiling policy modules, but that
+fallback must itself be verified. Do not replace or remove a precompiled
+policy merely because the hashes differ. Full APEX activation with
+`apexd_host` and CIL validation with `secilc` remain separate future checks.
