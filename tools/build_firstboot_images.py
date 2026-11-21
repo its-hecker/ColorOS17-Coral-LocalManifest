@@ -28,10 +28,10 @@ PARTITIONS = ("product", "system_ext")
 PIXEL_COPY = {
     "product": (
         "app/PixelCameraServicesCoral",
-        "app/FloralGoogleCamera",
+        "app/GoogleCameraCoral",
         "app/FloralMotionSenseBridge",
-        "etc/default-permissions/default-permissions-floral-gcam.xml",
-        "etc/sysconfig/floral-gcam-hidden-api.xml",
+        "etc/default-permissions/default-permissions-google-camera-coral.xml",
+        "etc/sysconfig/google-camera-coral.xml",
     ),
     "system_ext": (
         "app/QtiTelephonyService",
@@ -46,7 +46,7 @@ PIXEL_COPY = {
     ),
 }
 PIXEL_REQUIRED = {
-    "FloralGoogleCamera",
+    "GoogleCameraCoral",
     "FloralMotionSenseBridge",
     "FloralMotionSenseSettings",
     "FloralOsloFeedback",
@@ -249,7 +249,19 @@ def rootless_transplant_pixel(base_images, system, outdir, simg2img, reserve_byt
     found = {Path(rel).name for _, rel, _ in selected}
     missing = sorted(PIXEL_REQUIRED - found)
     if missing:
-        raise ValueError("Missing required compiled Pixel apps: " + ", ".join(missing))
+        details = []
+        for part, rels in PIXEL_COPY.items():
+            items = []
+            fs = sources[part]
+            for folder in ("app", "priv-app"):
+                if fs.exists("/" + folder):
+                    items.extend(fs.children("/" + folder))
+            details.append(part + " detected relevant folders: " +
+                           ", ".join(sorted(x for x in items if
+                                            any(y in x.lower() for y in
+                                                ("camera", "motion", "oslo", "pixel")))))
+        raise ValueError("Missing required compiled Pixel apps: " +
+                         ", ".join(missing) + "\n" + "\n".join(details))
     total = sum(size for _, _, size in selected)
     free = 39791 * 4096
     grow = max(0, total + 64 * 1024 * 1024 - free)
