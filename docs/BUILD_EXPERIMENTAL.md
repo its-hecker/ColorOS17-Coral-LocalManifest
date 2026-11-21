@@ -118,3 +118,24 @@ cd ~/coloros17-coral-port
 nonmatching donor content, or incorrect rollback metadata. It does not append
 another AVB footer or copy the donor again. Packaging is still an experimental
 engineering artifact, **not** a verified flashable ROM.
+
+## Read-only first-boot VINTF and SELinux input inventory
+
+Once the assembled package's super metadata and actual unpacked boot fstab
+have been checked, extract only VINTF XML and record SELinux policy input
+presence from the signed ColorOS system and compiled Pixel vendor raw ext4.
+
+```bash
+cd ~/coloros17-coral-port
+python3 -m unittest discover -s tests -p 'test_boot_compat_inventory.py' -v
+OUT="$PWD/work/engineering-minimal-20261121-045148"
+REPORT="$PWD/work/boot-compat-audit-$(date +%Y%m%d-%H%M%S)"
+python3 tools/audit_coloros_boot_compat.py --output "$OUT" --report-dir "$REPORT"
+python3 -m json.tool "$REPORT/boot-compat-inventory.json"
+```
+
+This audit reads the ext4 images through debugfs, checks XML well-formedness,
+lists framework/vendor HAL names and identifies which SELinux input files
+exist. It does not run the complete Android checkvintf machinery, does not
+reconcile binder ABI, linker namespaces, VNDK or policy rules, and cannot
+declare a successful boot. No raw partition data or image is changed.
