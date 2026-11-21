@@ -273,3 +273,48 @@ boot failure: Android may fall back to compiling policy modules, but that
 fallback must itself be verified. Do not replace or remove a precompiled
 policy merely because the hashes differ. Full APEX activation with
 `apexd_host` and CIL validation with `secilc` remain separate future checks.
+
+## Pixel vendor precompiled SELinux policy hash mismatch
+
+The ColorOS `plat`, `system_ext`, and `product` SELinux hash values may all
+differ from the Pixel vendor's `precompiled_sepolicy.*.sha256` hash files.
+Android init does *not* use that precompiled policy in this situation:
+its `OpenSplitPolicy()` path invokes `/system/bin/secilc` with the split
+platform, vendor and versioned-mapping CIL files to compile a new policy.
+**Never modify hash files to force acceptance of an incompatible precompiled
+binary, and never disable enforcing SELinux as a substitute for compilation.**
+
+Run an isolated host-side CIL compilation probe against the actual assembled
+ColorOS system.img and Pixel vendor-raw.img, with no image modifications:
+
+```bash
+cd ~/coloros17-coral-port
+python3 -m unittest discover -s tests -p 'test_check_coloros_split_sepolicy.py' -v
+OUT="$PWD/work/engineering-minimal-vintf-20261121-054439"
+REPORT="$PWD/work/selinux-compile-$(date +%Y%m%d-%H%M%S)"
+python3 tools/check_coloros_split_sepolicy.py \
+  --output "$OUT" \
+  --aosp "$HOME/coloros17-coral/aosp" \
+  --report-dir "$REPORT"
+python3 -m json.tool "$REPORT/selinux-compile-report.json"
+tail -n 100 "$REPORT/secilc.log"
+```
+
+Requires the host binary `$HOME/coloros17-coral/aosp/out/host/linux-x86/bin/secilc`;
+if absent, build it in the already-compiled Android tree with
+`source build/envsetup.sh && lunch hecker_coral-hecker_suite-userdebug &&
+USE_RBE=true m secilc` then rerun against a fresh report directory.
+
+The tool reads the vendor `plat_sepolicy_vers.txt`, requires the corresponding
+`system/etc/selinux/mapping/<version>.cil`, and exports only the CIL files
+that `OpenSplitPolicy()` would use. It attempts compilation with Android-like
+`-m -M true -G -N` flags and writes all outputs under a fresh work folder.
+By default, it uses the **host compiler's default binary policy version**;
+an exact `SEPOLICY_VERSION` from the compiled init can be supplied explicitly
+with `--policy-version N`. In either case, this is only a static compiler
+probe, not proof the ColorOS system SELinux policy is loadable on Pixel kernel
+or that runtime neverallow/enforcing behavior is valid.
+
+If the host compile fails, inspect the first `unknown type`, `Failed to
+resolve`, or missing mapping diagnostics rather than suppressing rules.
+APEX activation, full VINTF and real first-boot testing remain outstanding.
