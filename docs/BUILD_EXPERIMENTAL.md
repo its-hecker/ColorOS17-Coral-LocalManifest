@@ -239,3 +239,15 @@ minimal baseline. This is NOT a runtime-validated port and does not claim
 APEX, linker, VNDK, kernel FCM or SELinux policy compatibility. The resulting
 engineering ZIP is NOT an OTA or a safe-to-flash ROM release. Do not use a
 `COMPATIBLE` base-VINTF result as permission to flash.
+
+### Rebuild validation: existing ColorOS device FCM
+
+The donor may already include a `compatibility_matrix.device.xml` containing
+mandatory HALs or legacy shorthand format declarations. These **preexisting**
+entries are not new Pixel additions and must remain unchanged. The image
+builder now regenerates the expected complete matrix directly from the
+original donor ext4 and the reviewed HAL report, compares canonical XML
+against the successful candidate, and then replaces the donor matrix while
+preserving its original SELinux xattrs, uid/gid and mode. If no such donor
+matrix exists, the builder instead creates it using a neighboring VINTF
+file's metadata. An unexpected delta stops *before* copying large images.
