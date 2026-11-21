@@ -79,3 +79,42 @@ python3 tools/build_firstboot_images.py --rom-root "$HOME/coloros17-coral/aosp" 
 Even a fully signed archive remains an unverified engineering output, not a
 recovery ZIP or a known bootable ROM. AVB preflight does not verify Android
 framework compatibility, SELinux policy, first-stage mounts, or VINTF.
+
+## Resume after missing target-files archive (signed images preserved)
+
+When ColorOS minimal assembly completes `avbtool verify_image` but stops at
+`No AOSP target-files archive after coral build`, **do not** run the original
+`--resume-staged` path: the system image is already AVB-signed.
+
+Fetch the latest rootless branch and run:
+
+```bash
+python3 -m unittest discover -s tests -p 'test_super_resume.py' -v
+python3 tools/build_firstboot_images.py \
+  --rom-root "$HOME/coloros17-coral/aosp" \
+  --rootless --minimal-boot --resume-signed \
+  --output "$PWD/work/engineering-minimal-20261121-045148"
+```
+
+The assembly now reads generated metadata directly, preferring the original
+target-files `META/misc_info.txt` if available, or an AOSP-generated
+`super_empty_intermediates/misc_info.txt` / superimage metadata dictionary.
+These values are compared with the pinned coral BoardConfig. No geometry is
+invented, and `build_super_image.py` still creates the logical partition image.
+
+If these files genuinely do not exist, generate target-files from the compiled
+ROM source without intentionally rebuilding the full ROM:
+
+```bash
+cd ~/coloros17-coral/aosp
+source build/envsetup.sh
+lunch hecker_coral-hecker_suite-userdebug
+USE_RBE=true m target-files-package
+cd ~/coloros17-coral-port
+# Retry the same --resume-signed command above.
+```
+
+`--resume-signed` refuses finished output, failed signatures, missing audits,
+nonmatching donor content, or incorrect rollback metadata. It does not append
+another AVB footer or copy the donor again. Packaging is still an experimental
+engineering artifact, **not** a verified flashable ROM.
