@@ -387,3 +387,41 @@ would justify a follow-up patch to the **isolated ColorOS** Pixel source
 checkout with equivalent file contexts and policy references, followed
 by regenerating vendor and revalidating all inputs. It would not prove
 runtime service correctness or authorize device flashing.
+
+### `Problems processing genfscon rules` after the IMS RTP rename probe
+
+If the temporary IMS RTP domain rename gets past the type/typeattribute error
+but secilc then reports `Problems processing genfscon rules`, do not conclude
+the policy compiles. `genfscon` labels such as procfs/sysfs paths need another
+provenance audit. Android SELinux policy compatibility documentation cautions
+against incompatible platform/vendor filesystem labeling rules.
+
+Run the read-only duplicate audit on the exact exported CIL inputs (the
+rename probe only changed the `hal_imsrtp` domain token; it did not alter
+`genfscon` labels):
+
+```bash
+cd ~/coloros17-coral-port
+python3 -m unittest discover -s tests -p 'test_diagnose_genfscon_collisions.py' -v
+R="$PWD/work/selinux-compile-20261121-060305"
+python3 tools/diagnose_genfscon_collisions.py \
+  --report "$R/selinux-compile-report.json" \
+  --output "$R/genfscon-collisions.json"
+python3 - <<'PY'
+import json
+from pathlib import Path
+r=json.loads(Path('work/selinux-compile-20261121-060305/genfscon-collisions.json').read_text())
+print('conflicting fs/path rules:',r['different_context_path_count'])
+for row in r['different_context_examples'][:15]:
+ print(row['filesystem'],row['path'])
+ for item in row['declarations']:
+  print(' ',item['role'],item['source'],item['line'],item['declaration'][:160])
+PY
+```
+
+This reports duplicate `(filesystem, path)` pairs from the actual extracted
+policy modules, distinguishing identical from differing declarations and
+showing original CIL file and line numbers. If no duplicates appear, or
+the duplicates are identical, the root cause may be another genfscon
+validation issue requiring a more verbose compiler/source-level diagnosis.
+The tool never changes an image, rule, hash, or device.
