@@ -318,3 +318,33 @@ or that runtime neverallow/enforcing behavior is valid.
 If the host compile fails, inspect the first `unknown type`, `Failed to
 resolve`, or missing mapping diagnostics rather than suppressing rules.
 APEX activation, full VINTF and real first-boot testing remain outstanding.
+
+### Investigating `Re-declaration of type hal_imsrtp`
+
+The host CIL compile may fail with a type/typeattribute name collision
+around `hal_imsrtp`. This is a **policy compilation error**, not merely a
+precompiled hash mismatch. AOSP `init/selinux.cpp` compiles the system
+platform, compatibility mapping, optional system_ext/product, and vendor
+versioned/public and vendor CIL inputs together when hashes differ. The
+current split-policy test mirrors these CIL input roles, but its default
+`secilc` policy version is not necessarily identical to device init.
+
+Before editing anything, record which exported CIL file declares the
+conflicting symbol as a type and which declares it as a typeattribute:
+
+```bash
+cd ~/coloros17-coral-port
+python3 -m unittest discover -s tests -p 'test_diagnose_cil_symbol_conflict.py' -v
+REPORT="$PWD/work/selinux-compile-20261121-060305"
+python3 tools/diagnose_cil_symbol_conflict.py \
+  --report "$REPORT/selinux-compile-report.json" \
+  --output "$REPORT/hal-imsrtp-declarations.json"
+python3 -m json.tool "$REPORT/hal-imsrtp-declarations.json"
+```
+
+This diagnostic is read-only, preserves file paths/line numbers and reports
+if the exported inputs are insufficient to identify the conflict. Do not
+delete or rename HAL symbols, omit a security policy input, change platform
+hashes, or disable enforcing as a shortcut. Examine the corresponding
+original `.te` declarations, especially Pixel/Qualcomm vendor HAL domains,
+against actual donor platform policy before preparing a reviewed patch.
