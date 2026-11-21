@@ -648,9 +648,11 @@ def checked_resume_signed_minimal(out, aosp, donor):
     check_raw_ext4(system)
     check_raw_ext4(raw_vendor)
     report = json.loads(audit.read_text())
+    if report.get("status") != "CANDIDATE_ONLY" or not report.get("unmodified"):
+        raise ValueError("Unexpected or incomplete property-context audit report")
     if report.get("blocked") or any(
             row.get("status") not in ("no changes", "no change", "unchanged")
-            for row in report.get("unmodified", [])):
+            for row in report["unmodified"]):
         raise ValueError("Signed stage contains unverified property-context changes; "
                          "use fresh directory and inspect audit")
     # For this minimal boot, the system bytes before the AVB tree must equal
