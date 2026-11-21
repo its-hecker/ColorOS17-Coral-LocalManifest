@@ -482,12 +482,44 @@ def package(out, images, manifest):
     return str(name)
 
 
+
+def preflight_rootless_settings(aosp, built):
+    """Check essential compiled APK before making any multi-GB working copies.
+
+    Source APK presence alone is not enough: also inspect system_ext.img itself
+    so we can catch a stale image even if the staged directory contains the APK.
+    """
+    apk = built / "system_ext/priv-app/FloralMotionSenseSettings/FloralMotionSenseSettings.apk"
+    if not apk.is_file() or not apk.stat().st_size:
+        raise ValueError(
+            "FloralMotionSenseSettings is missing from installed output: " +
+            str(apk) + "\nBuild and install that module, then rebuild systemextimage "
+            "before running ColorOS assembly.")
+    image = built / "system_ext.img"
+    if not image.is_file():
+        raise ValueError("Compiled system_ext.img missing: " + str(image))
+    with tempfile.TemporaryDirectory(prefix="coloros17-systemext-check-") as directory:
+        raw = Path(directory) / "system_ext.raw.img"
+        disk_image(image, raw, executable(aosp, "simg2img"))
+        from rootless_ext4 import Ext4
+        fs = Ext4(raw)
+        candidate = "/priv-app/FloralMotionSenseSettings/FloralMotionSenseSettings.apk"
+        if not fs.exists(candidate):
+            raise ValueError(
+                "Staged FloralMotionSenseSettings APK exists, but system_ext.img "
+                "does not contain " + candidate +
+                "\nRebuild systemextimage from the selected coral product.")
+    return {"status": "MOTION_SETTINGS_IN_IMAGE", "apk": str(apk), "image": str(image)}
+
+
 def main():
     p = argparse.ArgumentParser(description="Generate signed but UNTESTED firstboot images")
     p.add_argument("--rom-root", type=Path, required=True)
     p.add_argument("--output", type=Path, default=WORK / "engineering")
     p.add_argument("--rootless", action="store_true",
                    help="use debugfs rather than privileged loop mounts")
+    p.add_argument("--check-inputs-only", action="store_true",
+                   help="verify rootless image inputs, without staging or copying ColorOS")
     args = p.parse_args()
     aosp, out = args.rom_root.resolve(), args.output.resolve()
     built = aosp / "out/target/product/coral"
@@ -497,6 +529,13 @@ def main():
     check_raw_ext4(donor)
     if not (built / "vendor.img").is_file():
         raise ValueError("Build Pixel 4 XL vendor.img first")
+    if args.check_inputs_only and not args.rootless:
+        raise ValueError("--check-inputs-only requires --rootless")
+    if args.rootless:
+        result = preflight_rootless_settings(aosp, built)
+        print(json.dumps(result, indent=2))
+    if args.check_inputs_only:
+        return
     if out.exists() and any(out.iterdir()):
         raise ValueError("Output directory already contains files: " + str(out))
     out.mkdir(parents=True, exist_ok=True)
