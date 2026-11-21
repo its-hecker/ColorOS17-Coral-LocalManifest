@@ -348,3 +348,42 @@ delete or rename HAL symbols, omit a security policy input, change platform
 hashes, or disable enforcing as a shortcut. Examine the corresponding
 original `.te` declarations, especially Pixel/Qualcomm vendor HAL domains,
 against actual donor platform policy before preparing a reviewed patch.
+
+### Confirmed split-CIL collision: ColorOS system_ext vs Pixel vendor
+
+The diagnostic identified **two distinct declarations** in the actual
+assembled-image CIL inputs:
+
+- ColorOS `/system_ext/etc/selinux/system_ext_sepolicy.cil:838`:
+  `(typeattribute hal_imsrtp)`.
+- Pixel `/etc/selinux/vendor_sepolicy.cil:1527`:
+  `(type hal_imsrtp)` (from the Pixel Qualcomm imsrtp service domain).
+
+The first host compiler error is therefore not an absent file or a bad
+SHA-256 policy hash: it is a real type/typeattribute namespace collision.
+
+To determine whether a narrowly scoped **vendor domain** rename would
+allow split policy compilation, run a dry-run against a temporary copy
+of the exported vendor CIL. It does NOT modify any actual ext4 image:
+
+```bash
+cd ~/coloros17-coral-port
+python3 -m unittest discover -s tests -p 'test_probe_imsrtp_cil_rename.py' -v
+R="$PWD/work/selinux-compile-20261121-060305"
+PROBE="$PWD/work/imsrtp-policy-probe-$(date +%Y%m%d-%H%M%S)"
+python3 tools/probe_imsrtp_cil_rename.py \
+  --report "$R/selinux-compile-report.json" \
+  --aosp "$HOME/coloros17-coral/aosp" \
+  --output "$PROBE"
+cat "$PROBE/probe-report.json"
+tail -n 80 "$PROBE/secilc-probe.log"
+```
+
+The probe renames the exact CIL domain token `hal_imsrtp` to
+`pixel_imsrtp_domain` only inside a *copied* vendor module. It leaves
+other tokens such as `hal_imsrtp_exec`, `hal_imsrtp_client` and the
+ColorOS `hal_imsrtp` typeattribute untouched. A passing host compile
+would justify a follow-up patch to the **isolated ColorOS** Pixel source
+checkout with equivalent file contexts and policy references, followed
+by regenerating vendor and revalidating all inputs. It would not prove
+runtime service correctness or authorize device flashing.
