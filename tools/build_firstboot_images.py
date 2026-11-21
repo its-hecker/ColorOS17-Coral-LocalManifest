@@ -228,6 +228,104 @@ def reconcile_pixel_property_contexts(system, vendor_raw, outdir, prefix):
     return result
 
 
+
+def rootless_transplant_pixel(base_images, system, outdir, simg2img, reserve_bytes):
+    """Copy reviewed Pixel packages with debugfs, checking uid/gid/mode/xattrs."""
+    from rootless_ext4 import Ext4, copy_node, file_bytes, check_image
+    sources = {}
+    for name in PARTITIONS:
+        img = base_images / (name + ".img")
+        if not img.is_file():
+            raise ValueError("Missing compiled " + str(img))
+        raw = disk_image(img, outdir / ("pixel-" + name + "-raw.img"), simg2img)
+        sources[name] = Ext4(raw)
+    selected = []
+    for partition, paths in PIXEL_COPY.items():
+        for rel in paths:
+            source_path = "/" + rel
+            if sources[partition].exists(source_path):
+                selected.append((partition, rel, file_bytes(sources[partition],
+                                                             source_path)))
+    found = {Path(rel).name for _, rel, _ in selected}
+    missing = sorted(PIXEL_REQUIRED - found)
+    if missing:
+        raise ValueError("Missing required compiled Pixel apps: " + ", ".join(missing))
+    total = sum(size for _, _, size in selected)
+    free = 39791 * 4096
+    grow = max(0, total + 64 * 1024 * 1024 - free)
+    grow = ((grow + 4095) // 4096) * 4096
+    if grow > reserve_bytes:
+        raise ValueError("Insufficient partition budget for rootless transplants")
+    if grow:
+        run("truncate", "-s", "+" + str(grow), system)
+        run("e2fsck", "-fy", system, allowed=(0, 1))
+        run("resize2fs", system)
+    donor = Ext4(system)
+    added = []
+    for partition, rel, size in selected:
+        destination = "/" + partition + "/" + rel
+        parent = str(Path(destination).parent)
+        if not donor.exists(parent):
+            raise ValueError("Donor parent folder not present: " + parent)
+        copy_node(sources[partition], donor, "/" + rel, destination)
+        added.append({"destination": destination, "source_partition": partition,
+                      "bytes": size})
+    check_image(system)
+    return {"new_files": added, "grown_by_bytes": grow,
+            "copied_bytes": total, "method": "debugfs-rootless-verified"}
+
+
+def rootless_reconcile_pixel_property_contexts(system, vendor_raw, outdir):
+    """Run the pinned collision resolver using rootlessly extracted files."""
+    from rootless_ext4 import Ext4, replace_file, check_image
+    donor, vendor = Ext4(system), Ext4(vendor_raw)
+    required = ("system/etc/selinux/plat_property_contexts",
+                "system_ext/etc/selinux/system_ext_property_contexts",
+                "product/etc/selinux/product_property_contexts")
+    vendor_paths = ("etc/selinux/vendor_property_contexts",
+                    "odm/etc/selinux/odm_property_contexts")
+    scanner = ROOT / "work/adapters/vendor/tools/resolve_property_contexts.py"
+    if not scanner.is_file():
+        raise ValueError("Pinned property-context scanner missing")
+    resultdir = outdir / "propctx"
+    resultdir.mkdir(exist_ok=True, parents=True)
+    with tempfile.TemporaryDirectory(dir=outdir) as tmp:
+        donor_root = Path(tmp) / "donor"
+        vendor_root = Path(tmp) / "vendor"
+        present = 0
+        for ext4, root, names in ((donor, donor_root, required),
+                                  (vendor, vendor_root, vendor_paths)):
+            for name in names:
+                if ext4.exists("/" + name):
+                    target = root / name
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    ext4.export_file("/" + name, target)
+                    if ext4 is vendor:
+                        present += 1
+                elif ext4 is donor:
+                    raise ValueError("Missing donor property-context file: " + name)
+        if not present:
+            raise ValueError("Missing vendor property contexts")
+        run(sys.executable, scanner, "--donor-root", donor_root,
+            "--vendor-root", vendor_root, "--output", resultdir, "--strict")
+        report = json.loads((resultdir / "report.json").read_text())
+        if report.get("blocked"):
+            raise ValueError("Unresolved property-context collisions")
+        updated = []
+        for row in report["unmodified"]:
+            if row["status"] == "candidate generated":
+                name = row["file"]
+                newfile = resultdir / name
+                if not newfile.is_file() or not newfile.stat().st_size:
+                    raise ValueError("Empty generated property-context file")
+                replace_file(donor, "/" + name, newfile)
+                updated.append(name)
+    check_image(system)
+    return {"updated": updated, "blocked": [],
+            "report": str(resultdir / "report.json"),
+            "method": "debugfs-rootless-verified"}
+
+
 def image_size_budget(aosp, sysimg, vendor):
     sys.path.insert(0, str(ROOT / "tools"))
     from partition_budget import assess, group_size, image_bytes
@@ -376,6 +474,8 @@ def main():
     p = argparse.ArgumentParser(description="Generate signed but UNTESTED firstboot images")
     p.add_argument("--rom-root", type=Path, required=True)
     p.add_argument("--output", type=Path, default=WORK / "engineering")
+    p.add_argument("--rootless", action="store_true",
+                   help="use debugfs rather than privileged loop mounts")
     args = p.parse_args()
     aosp, out = args.rom_root.resolve(), args.output.resolve()
     built = aosp / "out/target/product/coral"
@@ -395,9 +495,13 @@ def main():
     disk_image(built / "vendor.img", raw_vendor, simg)
     budget = image_size_budget(aosp, system, raw_vendor)
     reserve = budget["remaining_after_reservation_bytes"]
-    prefix = sudo_prefix()
-    transplant = transplant_pixel(built, system, out, simg, prefix, reserve)
-    propctx = reconcile_pixel_property_contexts(system, raw_vendor, out, prefix)
+    if args.rootless:
+        transplant = rootless_transplant_pixel(built, system, out, simg, reserve)
+        propctx = rootless_reconcile_pixel_property_contexts(system, raw_vendor, out)
+    else:
+        prefix = sudo_prefix()
+        transplant = transplant_pixel(built, system, out, simg, prefix, reserve)
+        propctx = reconcile_pixel_property_contexts(system, raw_vendor, out, prefix)
     vbmeta_sys = out / "vbmeta_system.img"
     avb = sign_system(aosp, system, vbmeta_sys, out)
     budget = image_size_budget(aosp, system, raw_vendor)
