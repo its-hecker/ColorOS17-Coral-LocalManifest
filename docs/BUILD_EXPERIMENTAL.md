@@ -139,3 +139,31 @@ lists framework/vendor HAL names and identifies which SELinux input files
 exist. It does not run the complete Android checkvintf machinery, does not
 reconcile binder ABI, linker namespaces, VNDK or policy rules, and cannot
 declare a successful boot. No raw partition data or image is changed.
+
+## Host checkvintf: unresolved /apex/apex-info-list.xml
+
+The `audit_coloros_boot_compat.py` inventory extracts VINTF XML but not the
+original ColorOS/Pixel APEX payloads. Running AOSP `checkvintf --check-compat`
+without `--dirmap /apex:...` may fail with
+`Cannot resolve path /apex/apex-info-list.xml` and cascaded manifest errors.
+This indicates incomplete host input setup, not a proven vendor mismatch.
+
+For a *partial base-manifest check*, the helper uses an empty mapped /apex
+directory and labels every result `APEX_UNCHECKED`. It does NOT claim full
+compatibility, and a `COMPATIBLE` result cannot authorize flashing.
+
+```bash
+cd ~/coloros17-coral-port
+python3 -m unittest discover -s tests -p 'test_check_coloros_vintf_base.py' -v
+REPORT=$(find "$PWD/work" -maxdepth 1 -type d -name 'boot-compat-audit-*' | sort | tail -n 1)
+python3 tools/check_coloros_vintf_base.py \
+  --aosp "$HOME/coloros17-coral/aosp" \
+  --audit "$REPORT" \
+  --log "$PWD/work/checkvintf-base-coloros-coral.log"
+```
+
+The full VINTF check still needs actual donor and Pixel APEX containers,
+`apexd_host` activated files and apex-info-list.xml; kernel/runtime metadata
+and independent SELinux policy validation are also outstanding. AOSP's
+`build/make/tools/releasetools/check_target_files_vintf.py` prepares the
+`/apex` mapping and uses `apexd_host` for exactly this reason.
