@@ -167,3 +167,39 @@ The full VINTF check still needs actual donor and Pixel APEX containers,
 and independent SELinux policy validation are also outstanding. AOSP's
 `build/make/tools/releasetools/check_target_files_vintf.py` prepares the
 `/apex` mapping and uses `apexd_host` for exactly this reason.
+
+## Vendor-specific HALs missing from the ColorOS framework matrix
+
+`check_coloros_vintf_base.py` may report `INCOMPATIBLE` when the Pixel vendor
+declares hardware-specific services that the ColorOS GSI framework matrix does
+not mention. Examples include Pixel display, Google Airbrush/SAR/wireless
+charging, and LineageOS health/LiveDisplay/touch HALs. Do NOT remove HALs or
+disable AVB/SELinux merely to make the compatibility tool pass.
+
+Run the isolated matrix-candidate generator, which parses the actual
+`checkvintf` error and requires exact package/interface/instance/version
+matches in the exported Pixel vendor manifest before adding any declaration:
+
+```bash
+cd ~/coloros17-coral-port
+python3 -m unittest discover -s tests -p 'test_prepare_coloros_device_fcm.py' -v
+REPORT=$(find "$PWD/work" -maxdepth 1 -type d -name 'boot-compat-audit-*' | sort | tail -n 1)
+CANDIDATE="$PWD/work/vintf-device-fcm-$(date +%Y%m%d-%H%M%S)"
+python3 tools/prepare_coloros_device_fcm.py \
+  --aosp "$HOME/coloros17-coral/aosp" \
+  --audit "$REPORT" \
+  --log "$PWD/work/checkvintf-base-coloros-coral.log" \
+  --candidate "$CANDIDATE"
+python3 -m json.tool "$CANDIDATE/candidate-report.json"
+```
+
+The output path under `vintf/coloros_system/system/etc/vintf/` is an
+**uninstalled XML candidate** at `compatibility_matrix.device.xml`. The
+generator runs `checkvintf` against this *copy*, not against the signed
+`system.img`. A `CANDIDATE_BASE_VINTF_COMPATIBLE_APEX_UNCHECKED` result
+only means the listed HAL declarations are sufficient for this partial
+host check. It is not evidence that the services exist or work at runtime,
+nor does it verify APEX, VNDK, linker namespaces or enforcing SELinux.
+
+Do not modify/re-sign the completed engineering images until the candidate
+is reviewed against the actual assembled donor and vendor artifacts.
