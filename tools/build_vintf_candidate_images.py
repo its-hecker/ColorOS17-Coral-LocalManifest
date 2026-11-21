@@ -165,10 +165,14 @@ def run_build(aosp, candidate, baseline, out):
         raise ValueError("Compiled vendor image no longer matches baseline")
     matrix_info = install_matrix(system, matrix)
     propctx = rootless_reconcile_pixel_property_contexts(system, raw_vendor, out)
-    changes = [item for item in propctx.get("unmodified", [])
-               if item.get("status") not in ("no changes", "no change", "unchanged")]
-    if changes:
-        raise ValueError("Unexpected additional property-context edits: " + repr(changes))
+    if propctx.get("updated") or propctx.get("blocked"):
+        raise ValueError("Unexpected property-context changes: " + repr(propctx))
+    audit_report = json.loads((out / "propctx/report.json").read_text())
+    if (audit_report.get("status") != "CANDIDATE_ONLY" or
+            not audit_report.get("unmodified") or
+            any(row.get("status") not in ("no changes", "no change", "unchanged")
+                for row in audit_report["unmodified"])):
+        raise ValueError("Property-context audit was incomplete or proposed edits")
     vbmeta_system = out / "vbmeta_system.img"
     avb = sign_system(aosp, system, vbmeta_system, out)
     budget = image_size_budget(aosp, system, raw_vendor)
